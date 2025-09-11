@@ -7,6 +7,17 @@ st.set_page_config(
     page_title="Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)",
     layout="wide"
 )
+# Estilo para caber bem em folha retrato (Word) e com margem lateral curta
+st.markdown(
+    """
+    <style>
+      .block-container {max-width: 780px; padding-left: 12px; padding-right: 12px;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)",
+    layout="wide"
+)
 
 # =============================
 # Sidebar: Guia e fundamentos
@@ -313,10 +324,13 @@ else:
             resultado["sit"] = "Não prescrito"
             resultado["detalhe"] = f"Data-alvo projetada ({base_label}): {prazo_final.strftime('%d/%m/%Y')}."
             auto_option = "A"
+            mi_text = (
+                f"dos marcos interruptivos em [{interrupcoes_str}]" if interrupcoes_consideradas else "sem marcos interruptivos identificados"
+            )
             option_text = (
                 f"À vista do termo inicial em "
                 f"{(termo_inicial if enquadramento=='Novo regime (art. 5º‑A)' else date(2024,7,18)).strftime('%d/%m/%Y')}, "
-                f"dos marcos interruptivos em [{interrupcoes_str or '—'}] e da ausência de paralisação superior a 3 anos, "
+                f"{mi_text} e da ausência de paralisação superior a 3 anos, "
                 "não se verifica prescrição, devendo o feito prosseguir para exame de mérito."
             )
 
@@ -367,10 +381,10 @@ _html = f"""
     <div><b>Natureza:</b> {resultado.get('natureza','—')}</div>
     <div><b>Conduta:</b> {resultado.get('conduta','—')}</div>
     <div><b>Termo inicial:</b> {(_termo_inicial.strftime('%d/%m/%Y') if isinstance(_termo_inicial, date) else '—')} ({resultado.get('termo_inicial_label','')})</div>
-    <div><b>Data-alvo:</b> {(_prazo_final.strftime('%d/%m/%Y') if isinstance(_prazo_final, date) else '—')}</div>
+    <div><b>Data atual de prescrição:</b> {(_prazo_final.strftime('%d/%m/%Y') if isinstance(_prazo_final, date) else '—')}</div>
     <div style='grid-column: 1 / -1;'><b>Interrupções consideradas:</b> {_interrupcoes_str}</div>
   </div>
-  {f"<div style='margin-top:12px; padding:12px; background:#fff5f5; border-left:4px solid {_status_color}; border-radius:8px;'><div style='font-weight:600;'>Conclusão sugerida (texto para colar):</div><div>{option_text}</div></div>" if option_text else ""}
+  {f"<div style='margin-top:12px; padding:12px; background:#fff5f5; border-left:4px solid {_status_color}; border-radius:8px;'><div style='font-weight:600;'>Conclusão sugerida:</div><div>{option_text}</div></div>" if option_text else ""}
   <div style='margin-top:12px; font-size:0.9rem; color:#666; text-align:right;'>Calculadora de Prescrição da SGE</div>
 </div>
 """
@@ -379,16 +393,7 @@ st.markdown(_html, unsafe_allow_html=True)
 
 st.markdown("---")
 
-st.markdown("### Texto livre para o parecer (edite conforme o caso)")
-bloco = f'''
-Enquadramento: {enquadramento}. Natureza: {resultado.get("natureza","—")}. Conduta: {resultado.get("conduta","—")}.
-Termo inicial adotado: {resultado.get("termo_inicial").strftime("%d/%m/%Y") if isinstance(resultado.get("termo_inicial"), date) else "N/A"} ({resultado.get("termo_inicial_label","")}).
-Interrupções: {", ".join([d.strftime("%d/%m/%Y") for d in resultado.get("interrupcoes", [])]) or "não informado"}.
-Situação: {resultado.get("sit","—")}. Detalhe: {resultado.get("detalhe","—")}.
-'''
-st.text_area("Texto livre", value=bloco.strip(), height=240)
 
-st.markdown("---")
 st.caption(
     "Observações: (i) Interrupções (§3º) reiniciam a contagem; (ii) intercorrente (§1º): paralisação > 3 anos; "
     "(iii) se houver crime, prevalece o prazo penal; (iv) na ressarcitória, registre a motivação do termo inicial (evento danoso/último pagamento/cessação)."
