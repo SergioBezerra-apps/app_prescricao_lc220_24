@@ -3,8 +3,13 @@ from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
 st.set_page_config(page_title="Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)", layout="wide")
-st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)
-
+st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True),
+    layout="wide"
+)
+# Estilo para caber bem em folha retrato (Word) e com margem lateral curta
+st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True),
+    layout="wide"
+)
 
 # =============================
 # Sidebar: Guia e fundamentos
@@ -108,42 +113,7 @@ presc_antes_lei = st.selectbox(
 # 2) Enquadramento intertemporal
 # =============================
 st.subheader("Enquadramento intertemporal")
-sugerido = "Novo regime (art. 5º‑A)"
-if transitou_pre_lc == "Sim":
-    sugerido = "Fora do alcance: decisão anterior a 18/07/2024"
-else:
-    if (termo_inicial <= date(2021, 7, 18)) and (data_autuacao <= date(2024, 7, 18)):
-        sugerido = "Transição 2 anos (LC 220/24)"
-    else:
-        sugerido = "Novo regime (art. 5º‑A)"
-
-# OVERRIDE (regra corrigida segundo Proc. 224.269‑8/23):
-# Se o fato é anterior a 18/07/2021 e não estava prescrito até 18/07/2024, 
-# aplica-se a transição, **independentemente da data de autuação**.
-if transitou_pre_lc != "Sim":
-    if presc_antes_lei == "Sim":
-        sugerido = "Prescrição consumada antes da lei"
-    elif termo_inicial < date(2021, 7, 18):
-        sugerido = "Transição 2 anos (LC 220/24)"
-    else:
-        sugerido = "Novo regime (art. 5º‑A)"
-
-enquadramento = st.selectbox(
-    "Selecione o enquadramento (ajuste se necessário)",
-    [
-        "Novo regime (art. 5º‑A)",
-        "Transição 2 anos (LC 220/24)",
-        "Prescrição consumada antes da lei",
-        "Fora do alcance: decisão anterior a 18/07/2024",
-    ],
-    index=[
-        "Novo regime (art. 5º‑A)",
-        "Transição 2 anos (LC 220/24)",
-        "Prescrição consumada antes da lei",
-        "Fora do alcance: decisão anterior a 18/07/2024",
-    ].index(sugerido),
-    help="O app sugere com base nas datas; você pode ajustar conforme a instrução.",
-)
+# Será sugerido automaticamente após a escolha dos marcos interruptivos (teste pré-lei usa a data de autuação como ciência).
 
 # =============================
 # 3) Marcos interruptivos (§3º) — UI dinâmica com calendário
@@ -198,6 +168,57 @@ if not no_interruptions:
 else:
     # Sem marcos interruptivos
     interrupcoes = []
+
+# === Enquadramento (cálculo automático com base nos marcos) ===
+from datetime import date as _date_for_prevcheck
+
+def _is_prescribed_before_law(ciencia_autuacao: _date_for_prevcheck, interrupcoes: list[_date_for_prevcheck]) -> bool:
+    """Verifica prescrição consumada até 18/07/2024 segundo o regime anterior (quinquênio),
+    usando, como regra, a data de autuação como data de ciência, com interrupções por analogia até o cutoff."""
+    cutoff = _date_for_prevcheck(2024, 7, 18)
+    if not isinstance(ciencia_autuacao, _date_for_prevcheck):
+        return False
+    ints_prev = sorted([d for d in interrupcoes if isinstance(d, _date_for_prevcheck) and ciencia_autuacao <= d <= cutoff])
+    start = ciencia_autuacao
+    for d in ints_prev:
+        if d >= start:
+            start = d
+    return start + relativedelta(years=5) <= cutoff
+
+presc_antes_lei_auto = _is_prescribed_before_law(data_autuacao, interrupcoes)
+
+sugerido = "Novo regime (art. 5º‑A)"
+if transitou_pre_lc == "Sim":
+    sugerido = "Fora do alcance: decisão anterior a 18/07/2024"
+elif presc_antes_lei_auto:
+    sugerido = "Prescrição consumada antes da lei"
+elif termo_inicial < date(2021, 7, 18):
+    sugerido = "Transição 2 anos (LC 220/24)"
+else:
+    sugerido = "Novo regime (art. 5º‑A)"
+
+enquadramento = st.selectbox(
+    "Selecione o enquadramento (ajuste se necessário)",
+    [
+        "Novo regime (art. 5º‑A)",
+        "Transição 2 anos (LC 220/24)",
+        "Prescrição consumada antes da lei",
+        "Fora do alcance: decisão anterior a 18/07/2024",
+    ],
+    index=[
+        "Novo regime (art. 5º‑A)",
+        "Transição 2 anos (LC 220/24)",
+        "Prescrição consumada antes da lei",
+        "Fora do alcance: decisão anterior a 18/07/2024",
+    ].index(sugerido),
+    help=(
+        "O app sugere com base nas datas e nos marcos.
+"
+        "No teste de **prescrição consumada antes da lei (até 18/07/2024)**, considera-se, em regra, a **data de autuação** como data de **ciência pelo TCE-RJ**;
+"
+        "se houver ciência anterior, ajuste pelos **marcos interruptivos** (por analogia) informados acima."
+    ),
+)
 
 # =============================
 # 4) Intercorrente (§1º)
