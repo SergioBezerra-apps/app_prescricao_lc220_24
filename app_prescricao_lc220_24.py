@@ -452,11 +452,7 @@ def _render_timeline_matplotlib(title: str, events: list[tuple[str, date, str]])
     ax.hlines(0, min(xs)-5, max(xs)+5)
     ax.scatter(xs, [0]*len(xs), s=50, zorder=3, c=colors)
     for x, (lbl, d, col) in zip(xs, evs):
-        ax.text(
-            x, 0.12,
-            f"{lbl}\n{d.strftime('%d/%m/%Y')}",
-            ha='center', va='bottom', fontsize=9, rotation=0
-        )
+        ax.text(x, 0.12, f"{lbl}\n{d.strftime('%d/%m/%Y')}", ha='center', va='bottom', fontsize=9, rotation=0)
     ax.set_title(title, fontsize=11)
     ax.get_yaxis().set_visible(False)
     ax.spines['left'].set_visible(False)
