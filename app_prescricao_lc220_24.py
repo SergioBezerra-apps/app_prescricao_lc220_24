@@ -11,34 +11,6 @@ st.set_page_config(
 # =============================
 # Sidebar: Guia e fundamentos
 # =============================
-with st.sidebar:
-    st.header("Guia rápido")
-    st.markdown(
-        "- **Punitiva**: aplica diretamente o **art. 5º‑A da LC‑RJ 63/1990** (quinquênio), **incluído pela LC‑RJ 220/2024**.\n"
-        "  Termo inicial: **data do ato** (ou **cessação**, se continuada).\n"
-        "- **Ressarcitória**: por **analogia**, usa-se a mesma lógica;\n"
-        "  termo inicial deve ser motivado (ex.: **evento danoso**, **última medição/pagamento**, **cessação do dano**)."
-    )
-    st.markdown("---")
-    st.subheader("Bases do cálculo")
-    st.caption(
-        "• Novo regime (art. 5º‑A LC‑RJ 63/1990): 5 anos.\n"
-        "• Transição (LC‑RJ 220/2024): 2 anos contados de 18/07/2024.\n"
-        "• Intercorrente (§1º): 3 anos de paralisação sem julgamento/ despacho.\n"
-        "• Interrupções (§3º): citação/ notificação; ato inequívoco de apuração; decisão condenatória recorrível; tentativa conciliatória.\n"
-        "• Conexão penal: prevalece o prazo penal."
-    )
-    st.markdown("---")
-    with st.expander("Dúvidas frequentes"):
-        st.markdown(
-            "**O app distingue punitiva e ressarcitória?**\n"
-            "Sim. A distinção afeta sobretudo o **termo inicial** (como você o fixa) e o **texto de saída**. "
-            "Os prazos/hipóteses são equivalentes por analogia.\n\n"
-            "**O que é ‘ato inequívoco de apuração’?**\n"
-            "Ato **autônomo** de investigação (p.ex.: auditoria, tomada de contas). "
-            "Atos meramente incidentais não interrompem."
-        )
-
 st.title("Calculadora de Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)")
 st.caption("Ferramenta de apoio. Ajuste as premissas ao caso concreto e registre a motivação no parecer.")
 
@@ -127,6 +99,13 @@ with colF:
             "Prazo penal (anos)", min_value=1, max_value=40, value=8, step=1, help="Informe o prazo prescricional penal aplicável ao tipo."
         )
 
+# Controle: prescrição já consumada antes da lei?
+presc_antes_lei = st.selectbox(
+    "Pretensão já estava prescrita integralmente até 18/07/2024 (regime anterior)?",
+    ["Não", "Sim"],
+    help="Se 'Sim', reconhece-se a prescrição pelo regime anterior (antes da LC‑RJ 220/2024).",
+)
+
 # =============================
 # 2) Enquadramento intertemporal
 # =============================
@@ -136,6 +115,17 @@ if transitou_pre_lc == "Sim":
     sugerido = "Fora do alcance: decisão anterior a 18/07/2024"
 else:
     if (termo_inicial <= date(2021, 7, 18)) and (data_autuacao <= date(2024, 7, 18)):
+        sugerido = "Transição 2 anos (LC 220/24)"
+    else:
+        sugerido = "Novo regime (art. 5º‑A)"
+
+# OVERRIDE (regra corrigida segundo Proc. 224.269‑8/23):
+# Se o fato é anterior a 18/07/2021 e não estava prescrito até 18/07/2024, 
+# aplica-se a transição, **independentemente da data de autuação**.
+if transitou_pre_lc != "Sim":
+    if presc_antes_lei == "Sim":
+        sugerido = "Prescrição consumada antes da lei"
+    elif termo_inicial < date(2021, 7, 18):
         sugerido = "Transição 2 anos (LC 220/24)"
     else:
         sugerido = "Novo regime (art. 5º‑A)"
@@ -345,36 +335,48 @@ else:
 # 6) Saída e texto para o parecer
 # =============================
 st.markdown("### Resultado")
-cols = st.columns(2)
-with cols[0]:
-    st.write(f"**Situação:** {resultado.get('sit','—')}")
-    st.write(f"**Detalhe:** {resultado.get('detalhe','—')}")
-    st.write(f"**Enquadramento:** {enquadramento}")
-    st.write(f"**Natureza:** {resultado.get('natureza','—')}")
-    st.write(f"**Conduta:** {resultado.get('conduta','—')}")
-with cols[1]:
-    if isinstance(resultado.get("termo_inicial"), date):
-        st.write(
-            f"**Termo inicial:** {resultado.get('termo_inicial').strftime('%d/%m/%Y')}"
-            f" ({resultado.get('termo_inicial_label','')})"
-        )
-    if isinstance(resultado.get("prazo_final"), date):
-        st.write(f"**Data-alvo:** {resultado.get('prazo_final').strftime('%d/%m/%Y')}")
-    st.write(f"**Base:** {resultado.get('base','—')}")
-    st.write(
-        "**Interrupções consideradas:** "
-        + (", ".join([d.strftime("%d/%m/%Y") for d in resultado.get("interrupcoes", [])]) or "não informado")
-    )
 
-st.markdown("### Síntese conclusiva (modelo A–E)")
-if auto_option in ["A", "B", "C", "D", "E"]:
-    st.success(f"Modelo sugerido: **Opção {auto_option}**")
-    st.text_area("Texto (copiar/colar)", value=option_text or "", height=180)
-else:
-    st.info(
-        "Nenhum dos modelos A–E se aplica literalmente aos dados informados (ex.: transição com interrupções). "
-        "Ajuste as premissas ou use o texto livre abaixo."
-    )
+# Bloco visual único para facilitar print e colagem em Word
+# (cores condicionais, destaque em vermelho para situações de prescrição)
+_sit = resultado.get('sit', '—')
+
+def _color_for_status(s: str) -> str:
+    s = (s or '').lower()
+    if 'prescrição consumada' in s or 'intercorrente' in s or 'prescrição reconhecida' in s:
+        return '#D93025'  # vermelho
+    elif 'não prescrito' in s:
+        return '#1E8E3E'  # verde
+    else:
+        return '#1A73E8'  # azul
+
+_status_color = _color_for_status(_sit)
+
+_termo_inicial = resultado.get('termo_inicial')
+_prazo_final = resultado.get('prazo_final')
+_interrupcoes = resultado.get('interrupcoes', [])
+_interrupcoes_str = ", ".join([d.strftime('%d/%m/%Y') for d in _interrupcoes]) if _interrupcoes else '—'
+
+_html = f"""
+<div style='border:1px solid {_status_color}; padding:16px; border-radius:12px; margin-bottom:8px;'>
+  <div style='font-weight:700; font-size:1.1rem; color:{_status_color};'>Situação: {resultado.get('sit','—')}</div>
+  <div style='margin-top:6px;'>{resultado.get('detalhe','—')}</div>
+  <hr style='border:none; border-top:1px dashed #ddd; margin:12px 0;'>
+  <div style='display:grid; grid-template-columns: 1fr 1fr; gap:8px;'>
+    <div><b>Enquadramento:</b> {enquadramento}</div>
+    <div><b>Base:</b> {resultado.get('base','—')}</div>
+    <div><b>Natureza:</b> {resultado.get('natureza','—')}</div>
+    <div><b>Conduta:</b> {resultado.get('conduta','—')}</div>
+    <div><b>Termo inicial:</b> {(_termo_inicial.strftime('%d/%m/%Y') if isinstance(_termo_inicial, date) else '—')} ({resultado.get('termo_inicial_label','')})</div>
+    <div><b>Data-alvo:</b> {(_prazo_final.strftime('%d/%m/%Y') if isinstance(_prazo_final, date) else '—')}</div>
+    <div style='grid-column: 1 / -1;'><b>Interrupções consideradas:</b> {_interrupcoes_str}</div>
+  </div>
+  {f"<div style='margin-top:12px; padding:12px; background:#fff5f5; border-left:4px solid {_status_color}; border-radius:8px;'><div style='font-weight:600;'>Conclusão sugerida (texto para colar):</div><div>{option_text}</div></div>" if option_text else ""}
+  <div style='margin-top:12px; font-size:0.9rem; color:#666; text-align:right;'>Calculadora de Prescrição da SGE</div>
+</div>
+"""
+
+st.markdown(_html, unsafe_allow_html=True)
+
 st.markdown("---")
 
 st.markdown("### Texto livre para o parecer (edite conforme o caso)")
