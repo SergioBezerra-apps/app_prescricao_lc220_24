@@ -8,14 +8,7 @@ st.set_page_config(
     layout="wide"
 )
 # Estilo para caber bem em folha retrato (Word) e com margem lateral curta
-st.markdown(
-    """
-    <style>
-      .block-container {max-width: 780px; padding-left: 12px; padding-right: 12px;}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)",
+st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)",
     layout="wide"
 )
 
