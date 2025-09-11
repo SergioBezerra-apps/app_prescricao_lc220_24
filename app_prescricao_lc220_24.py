@@ -206,10 +206,8 @@ enquadramento = st.selectbox(
         "Fora do alcance: decisão anterior a 18/07/2024",
     ].index(sugerido),
     help=(
-        "O app sugere com base nas datas e nos marcos.
-"
-        "No teste de **prescrição consumada antes da lei (até 18/07/2024)**, considera-se, em regra, a **data de autuação** como data de **ciência pelo TCE-RJ**;
-"
+        "O app sugere com base nas datas e nos marcos."
+        "No teste de **prescrição consumada antes da lei (até 18/07/2024)**, considera-se, em regra, a **data de autuação** como data de **ciência pelo TCE-RJ**;"
         "se houver ciência anterior, ajuste pelos **marcos interruptivos** (por analogia) informados acima."
     ),
 )
