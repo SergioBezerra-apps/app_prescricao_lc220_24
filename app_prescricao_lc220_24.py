@@ -3,13 +3,8 @@ from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
 st.set_page_config(page_title="Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)", layout="wide")
-st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True),
-    layout="wide"
-)
-# Estilo para caber bem em folha retrato (Word) e com margem lateral curta
-st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True),
-    layout="wide"
-)
+st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)
+
 
 # =============================
 # Sidebar: Guia e fundamentos
