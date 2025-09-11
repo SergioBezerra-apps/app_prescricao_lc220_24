@@ -1,13 +1,12 @@
 import streamlit as st
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
-import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)", layout="wide")
 st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)
 
 # =============================
-# Sidebar: Guia e fundamentos
+# Cabeçalho
 # =============================
 st.title("Calculadora de Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)")
 st.caption("Ferramenta de apoio. Ajuste as premissas ao caso concreto e registre a motivação no parecer.")
@@ -94,13 +93,6 @@ with colF:
         prazo_penal_anos = st.number_input(
             "Prazo penal (anos)", min_value=1, max_value=40, value=8, step=1, help="Informe o prazo prescricional penal aplicável ao tipo."
         )
-
-# Controle: prescrição já consumada antes da lei?
-presc_antes_lei = st.selectbox(
-    "Pretensão já estava prescrita integralmente até 18/07/2024 (regime anterior)?",
-    ["Não", "Sim"],
-    help="Se 'Sim', reconhece-se a prescrição pelo regime anterior (antes da LC‑RJ 220/2024).",
-)
 
 # =============================
 # 2) Enquadramento intertemporal
@@ -217,12 +209,10 @@ enquadramento = st.selectbox(
         "Prescrição consumada antes da lei",
         "Fora do alcance: decisão anterior a 18/07/2024",
     ].index(sugerido),
-    help=(
-        "O app sugere com base nas datas e nos marcos."
-        "No teste de **prescrição consumada antes da lei (até 18/07/2024)**, considera-se, em regra, a **data de autuação** como data de **ciência pelo TCE-RJ**;"
-        "se houver ciência anterior, ajuste pelos **marcos interruptivos** (por analogia) informados acima."
-    ),
+    help="""O app sugere com base nas datas e nos marcos.
+No teste de **prescrição consumada antes da lei (até 18/07/2024)**, considera-se, em regra, a **data de autuação** como data de **ciência pelo TCE-RJ**; se houver ciência anterior, ajuste pelos **marcos interruptivos** (por analogia) informados acima.""",
 )
+
 
 # =============================
 # 4) Intercorrente (§1º)
@@ -436,31 +426,36 @@ show_timeline = st.checkbox(
     ),
 )
 
-from datetime import timedelta as _td
-
-def _render_timeline_matplotlib(title: str, events: list[tuple[str, date, str]]):
+def _render_timeline_html(title: str, events: list[tuple[str, date, str]]):
     if not events or len(events) < 2:
         st.info("Eventos insuficientes para montar a linha do tempo.")
         return
-    evs = sorted(events, key=lambda x: x[1])
+    evs = sorted(events, key=lambda e: e[1])
     d0 = evs[0][1]
-    xs = [(e[1] - d0).days for e in evs]
-    labels = [e[0] for e in evs]
-    colors = [e[2] for e in evs]
-
-    fig, ax = plt.subplots(figsize=(9, 1.8))
-    ax.hlines(0, min(xs)-5, max(xs)+5)
-    ax.scatter(xs, [0]*len(xs), s=50, zorder=3, c=colors)
-    for x, (lbl, d, col) in zip(xs, evs):
-        ax.text(x, 0.12, f"{lbl}\n{d.strftime('%d/%m/%Y')}", ha='center', va='bottom', fontsize=9, rotation=0)
-    ax.set_title(title, fontsize=11)
-    ax.get_yaxis().set_visible(False)
-    ax.spines['left'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.set_xticks([])
-    st.pyplot(fig)
+    d1 = evs[-1][1]
+    span = (d1 - d0).days or 1
+    color_map = {
+        'tab:blue': '#1A73E8',
+        'tab:orange': '#FB8C00',
+        'tab:red': '#D93025',
+        'tab:gray': '#9AA0A6',
+        '#D93025': '#D93025',
+        '#1A73E8': '#1A73E8'
+    }
+    html = []
+    html.append("<div style='margin-top:8px;margin-bottom:16px'>")
+    html.append(f"<div style='font-weight:600;margin-bottom:6px'>{title}</div>")
+    html.append("<div style='position:relative;height:76px;border-top:2px solid #ddd;'>")
+    for lbl, d, col in evs:
+        left = int(((d - d0).days / span) * 100)
+        c = color_map.get(col, col)
+        html.append(f"<div style='position:absolute;left:{left}%;top:-6px;transform:translateX(-50%);text-align:center;'>"
+                    "<div style='width:10px;height:10px;border-radius:50%;background:"+c+";margin-bottom:4px;'></div>"
+                    f"<div style='font-size:11px;white-space:nowrap'>{lbl}</div>"
+                    f"<div style='font-size:11px;color:#555'>{d.strftime('%d/%m/%Y')}</div>"
+                    "</div>")
+    html.append("</div></div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
 
 if show_timeline:
     # --- Regime anterior ---
@@ -468,7 +463,6 @@ if show_timeline:
     ciencia = data_autuacao if isinstance(data_autuacao, date) else None
     if ciencia:
         ints_prev = sorted([d for d in interrupcoes if isinstance(d, date) and ciencia <= d <= cutoff])
-        # Reconstrói os resets para evidenciar a cronologia até a data de consumação
         start = ciencia
         events_prev = [("Ciência (autuação)", ciencia, 'tab:blue')]
         for dmar in ints_prev:
@@ -476,13 +470,11 @@ if show_timeline:
                 start = dmar
                 events_prev.append(("Marco interruptivo", dmar, 'tab:orange'))
         data_prelaw = start + relativedelta(years=5)
-        # Mostra até a data de consumação; se passar do cutoff, ainda é útil para visualizar distância
         color_end = 'tab:red' if data_prelaw <= cutoff else 'tab:gray'
         events_prev.append(("Consumação (reg. anterior)", data_prelaw, color_end))
-        _render_timeline_matplotlib("Regime anterior (até 18/07/2024)", events_prev)
+        _render_timeline_html("Regime anterior (até 18/07/2024)", events_prev)
 
     # --- Regime aplicável (novo/transição) ---
-    # Tenta usar as variáveis do cálculo atual
     _termo = resultado.get('termo_inicial') if isinstance(resultado.get('termo_inicial'), date) else None
     _prazo = resultado.get('prazo_final') if isinstance(resultado.get('prazo_final'), date) else None
     _ints = resultado.get('interrupcoes', [])
@@ -492,7 +484,7 @@ if show_timeline:
             events_now.append(("Marco interruptivo", dmar, 'tab:orange'))
         color_end_now = '#D93025' if (resultado.get('sit','').lower().startswith('prescrição')) else '#1A73E8'
         events_now.append(("Data atual de prescrição", _prazo, color_end_now))
-        _render_timeline_matplotlib(f"{enquadramento}", events_now)
+        _render_timeline_html(f"{enquadramento}", events_now)
 
 st.markdown("---")
 
