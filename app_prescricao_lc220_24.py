@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
+import time
 
 st.set_page_config(page_title="Prescrição — LC‑RJ 63/1990 (art. 5º‑A)", layout="wide")
 st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)
@@ -119,8 +120,13 @@ _init_interruptions_state()
 
 colNI, colBtns = st.columns([1, 1])
 with colNI:
-    no_interruptions = st.checkbox("Não houve marco interruptivo", value=False)
+    no_interruptions = st.checkbox(
+        "Não houve marco interruptivo",
+        value=False,
+        help="Marque se não houve citação/notificação, ato inequívoco de apuração, decisão condenatória recorrível ou tentativa conciliatória."
+    )
 
+status_ph = st.empty()
 interrupcoes = []
 
 if not no_interruptions:
@@ -137,16 +143,28 @@ if not no_interruptions:
 
     with colBtns:
         colAdd, colRem, colClr = st.columns([1, 1, 1])
-        if colAdd.button("➕ Adicionar data"):
+        if colAdd.button("➕ Adicionar data", use_container_width=True):
+            status_ph.info("Adicionando campo de data…")
             st.session_state.marco_count += 1
             st.session_state.marco_dates.append(None)
-        if colRem.button("➖ Remover última", disabled=st.session_state.marco_count <= 1):
+            time.sleep(0.2)
+            status_ph.empty()
+            st.rerun()
+        if colRem.button("➖ Remover última", disabled=st.session_state.marco_count <= 1, use_container_width=True):
+            status_ph.info("Removendo…")
             if st.session_state.marco_count > 1:
                 st.session_state.marco_count -= 1
                 st.session_state.marco_dates = st.session_state.marco_dates[: st.session_state.marco_count]
-        if colClr.button("🗑️ Limpar todas"):
+            time.sleep(0.2)
+            status_ph.empty()
+            st.rerun()
+        if colClr.button("🗑️ Limpar todas", use_container_width=True):
+            status_ph.info("Limpando…")
             st.session_state.marco_count = 1
             st.session_state.marco_dates = [None]
+            time.sleep(0.2)
+            status_ph.empty()
+            st.rerun()
 
     # Coleta as datas válidas
     interrupcoes = [d for d in st.session_state.marco_dates if isinstance(d, date)]
