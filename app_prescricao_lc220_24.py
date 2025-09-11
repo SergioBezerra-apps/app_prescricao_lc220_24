@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)", layout="wide")
 st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)
@@ -19,11 +20,9 @@ with colA:
     natureza = st.selectbox(
         "Natureza da pretensão",
         ["Punitiva", "Ressarcitória (analogia)"],
-        help=(
-            "Selecione 'Punitiva' para multas/sanções. "
-            "Selecione 'Ressarcitória (analogia)' para débito/dano ao erário."
-        ),
-    )
+        help="""O app sugere com base nas datas e nos marcos.
+No teste de **prescrição consumada antes da lei (até 18/07/2024)**, considera-se, em regra, a **data de autuação** como data de **ciência pelo TCE-RJ**; se houver ciência anterior, ajuste pelos **marcos interruptivos** (por analogia) informados acima.""",
+)
 with colB:
     conduta = st.selectbox(
         "Tipo de conduta",
@@ -179,6 +178,19 @@ def _is_prescribed_before_law(ciencia_autuacao: _date_for_prevcheck, interrupcoe
             start = d
     return start + relativedelta(years=5) <= cutoff
 
+def _prelaw_prescription_date(ciencia_autuacao: _date_for_prevcheck, interrupcoes: list[_date_for_prevcheck]) -> _date_for_prevcheck | None:
+    """Calcula a data de consumação da prescrição no regime anterior (quinquênio),
+    considerando ciência = autuação e interrupções até 18/07/2024."""
+    cutoff = _date_for_prevcheck(2024, 7, 18)
+    if not isinstance(ciencia_autuacao, _date_for_prevcheck):
+        return None
+    ints_prev = sorted([d for d in interrupcoes if isinstance(d, _date_for_prevcheck) and ciencia_autuacao <= d <= cutoff])
+    start = ciencia_autuacao
+    for d in ints_prev:
+        if d >= start:
+            start = d
+    return start + relativedelta(years=5)
+
 presc_antes_lei_auto = _is_prescribed_before_law(data_autuacao, interrupcoes)
 
 sugerido = "Novo regime (art. 5º‑A)"
@@ -252,15 +264,39 @@ if enquadramento == "Fora do alcance: decisão anterior a 18/07/2024":
     resultado["sit"] = "Fora do alcance da LC‑RJ 220/2024"
     resultado["detalhe"] = "Decisão administrativa transitada em julgado anterior a 18/07/2024."
 elif enquadramento == "Prescrição consumada antes da lei":
+    cutoff = date(2024, 7, 18)
+    ciencia = data_autuacao if isinstance(data_autuacao, date) else None
+    data_prelaw = _prelaw_prescription_date(ciencia, interrupcoes)
+
     resultado["sit"] = "Prescrição reconhecida (regime anterior)"
-    resultado["detalhe"] = (
-        "A prescrição consumou-se integralmente antes de 18/07/2024, sob o regime precedente."
-    )
+    if isinstance(data_prelaw, date):
+        resultado["detalhe"] = (
+            f"Com base nos dados inseridos, a prescrição consumou-se em {data_prelaw.strftime('%d/%m/%Y')}, antes de 18/07/2024."
+        )
+    else:
+        resultado["detalhe"] = (
+            "Com base nos dados inseridos, a prescrição consumou-se integralmente antes de 18/07/2024 (regime anterior)."
+        )
+
     auto_option = "B"
-    option_text = (
-        "O prazo prescricional consumou-se integralmente antes de 18/07/2024, sob o regime então vigente, "
-        "impondo o reconhecimento da prescrição por segurança jurídica e irretroatividade da nova lei."
-    )
+    if isinstance(data_prelaw, date):
+        option_text = (
+            "Com base nos dados inseridos (considerando a autuação como ciência e os marcos interruptivos informados), "
+            f"a prescrição consumou-se em {data_prelaw.strftime('%d/%m/%Y')}, antes de 18/07/2024, "
+            "impondo o reconhecimento da prescrição por segurança jurídica e irretroatividade da nova lei."
+        )
+    else:
+        option_text = (
+            "Com base nos dados inseridos, a prescrição consumou-se integralmente antes de 18/07/2024, sob o regime então vigente, "
+            "impondo o reconhecimento da prescrição por segurança jurídica e irretroatividade da nova lei."
+        )
+
+    # Preencher campos para o cartão de resultado
+    resultado["termo_inicial"] = ciencia
+    resultado["termo_inicial_label"] = "Ciência (autuação) — regime anterior"
+    resultado["base"] = "quinquenal (regime anterior)"
+    resultado["prazo_final"] = data_prelaw
+    resultado["interrupcoes"] = sorted([d for d in interrupcoes if isinstance(d, date) and d <= cutoff])
 else:
     # Base de anos (penal prevalece)
     if aplicar_prazo_penal == "Sim" and prazo_penal_anos:
@@ -390,6 +426,74 @@ _html = f"""
 """
 
 st.markdown(_html, unsafe_allow_html=True)
+
+# ===== Linha do tempo (opcional) =====
+show_timeline = st.checkbox(
+    "Mostrar linha do tempo (regime anterior e regime aplicável)", value=False,
+    help=(
+        "Visualização dos marcos ao longo do tempo. No regime anterior, considera-se, em regra, a autuação como ciência; "
+        "marcos até 18/07/2024 reiniciam o quinquênio. No regime aplicável, usa-se o termo inicial efetivo, marcos válidos e a data atual de prescrição."
+    ),
+)
+
+from datetime import timedelta as _td
+
+def _render_timeline_matplotlib(title: str, events: list[tuple[str, date, str]]):
+    if not events or len(events) < 2:
+        st.info("Eventos insuficientes para montar a linha do tempo.")
+        return
+    evs = sorted(events, key=lambda x: x[1])
+    d0 = evs[0][1]
+    xs = [(e[1] - d0).days for e in evs]
+    labels = [e[0] for e in evs]
+    colors = [e[2] for e in evs]
+
+    fig, ax = plt.subplots(figsize=(9, 1.8))
+    ax.hlines(0, min(xs)-5, max(xs)+5)
+    ax.scatter(xs, [0]*len(xs), s=50, zorder=3, c=colors)
+    for x, (lbl, d, col) in zip(xs, evs):
+        ax.text(x, 0.12, f"{lbl}
+{d.strftime('%d/%m/%Y')}", ha='center', va='bottom', fontsize=9, rotation=0)
+    ax.set_title(title, fontsize=11)
+    ax.get_yaxis().set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.set_xticks([])
+    st.pyplot(fig)
+
+if show_timeline:
+    # --- Regime anterior ---
+    cutoff = date(2024, 7, 18)
+    ciencia = data_autuacao if isinstance(data_autuacao, date) else None
+    if ciencia:
+        ints_prev = sorted([d for d in interrupcoes if isinstance(d, date) and ciencia <= d <= cutoff])
+        # Reconstrói os resets para evidenciar a cronologia até a data de consumação
+        start = ciencia
+        events_prev = [("Ciência (autuação)", ciencia, 'tab:blue')]
+        for dmar in ints_prev:
+            if dmar >= start:
+                start = dmar
+                events_prev.append(("Marco interruptivo", dmar, 'tab:orange'))
+        data_prelaw = start + relativedelta(years=5)
+        # Mostra até a data de consumação; se passar do cutoff, ainda é útil para visualizar distância
+        color_end = 'tab:red' if data_prelaw <= cutoff else 'tab:gray'
+        events_prev.append(("Consumação (reg. anterior)", data_prelaw, color_end))
+        _render_timeline_matplotlib("Regime anterior (até 18/07/2024)", events_prev)
+
+    # --- Regime aplicável (novo/transição) ---
+    # Tenta usar as variáveis do cálculo atual
+    _termo = resultado.get('termo_inicial') if isinstance(resultado.get('termo_inicial'), date) else None
+    _prazo = resultado.get('prazo_final') if isinstance(resultado.get('prazo_final'), date) else None
+    _ints = resultado.get('interrupcoes', [])
+    if _termo and _prazo:
+        events_now = [("Termo inicial", _termo, 'tab:blue')]
+        for dmar in _ints:
+            events_now.append(("Marco interruptivo", dmar, 'tab:orange'))
+        color_end_now = '#D93025' if (resultado.get('sit','').lower().startswith('prescrição')) else '#1A73E8'
+        events_now.append(("Data atual de prescrição", _prazo, color_end_now))
+        _render_timeline_matplotlib(f"{enquadramento}", events_now)
 
 st.markdown("---")
 
