@@ -123,13 +123,9 @@ with colNI:
         "Não houve marco interruptivo",
         value=False,
         help=(
-        "Marque se não houve: citação/notificação; comunicação qualificada; ato inequívoco de apuração (instauração de auditoria/TCE);
-"
-        "decisão condenatória recorrível; tentativa conciliatória.
-
-"
-        "Nota: Regra atual — comunicação QUALIFICADA interrompe (efeito subjetivo).
-"
+        "Marque se não houve: citação/notificação; comunicação qualificada; ato inequívoco de apuração (instauração de auditoria/TCE);"
+        "decisão condenatória recorrível; tentativa conciliatória."
+        "Nota: Regra atual — comunicação QUALIFICADA interrompe (efeito subjetivo)."
         "Proposta no Proc. 227.877-1/14 (vista): comunicações (mesmo qualificadas) NÃO interrompem; apenas instauração de auditoria/TCE."
     )
     )
