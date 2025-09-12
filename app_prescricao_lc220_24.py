@@ -155,15 +155,10 @@ if not no_interruptions:
             value=default_val,
             key=f"marco_{i}",
             help=(
-            "Marcos interruptivos (§3º): citação/notificação; comunicação qualificada (dá ciência específica e abre defesa/esclarecimentos, efeito subjetivo);
-"
-            "ato inequívoco de apuração (instauração de auditoria/TCE); decisão condenatória recorrível; tentativa conciliatória.
-
-"
-            "Nota: Regra atual — comunicação QUALIFICADA interrompe.
-"
-            "Proposta 227.877-1/14 (vista): comunicações (mesmo qualificadas) NÃO interrompem; apenas instauração de auditoria/TCE.
-"
+            "Marcos interruptivos (§3º): citação/notificação; comunicação qualificada (dá ciência específica e abre defesa/esclarecimentos, efeito subjetivo);"
+            "ato inequívoco de apuração (instauração de auditoria/TCE); decisão condenatória recorrível; tentativa conciliatória."
+            "Nota: Regra atual — comunicação QUALIFICADA interrompe."
+            "Proposta 227.877-1/14 (vista): comunicações (mesmo qualificadas) NÃO interrompem; apenas instauração de auditoria/TCE."
             "Retroação: chamamento válido retroage à data da decisão que o determinou."
         ),
         )
