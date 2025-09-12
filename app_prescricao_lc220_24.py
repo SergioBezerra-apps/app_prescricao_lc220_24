@@ -1,15 +1,14 @@
 import streamlit as st
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
-import time
 
-st.set_page_config(page_title="Prescrição — LC‑RJ 63/1990 (art. 5º‑A)", layout="wide")
+st.set_page_config(page_title="Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)", layout="wide")
 st.markdown("<style>.block-container {max-width:780px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)
 
 # =============================
 # Cabeçalho
 # =============================
-st.title("Calculadora de Prescrição — LC‑RJ 63/1990 (art. 5º‑A)")
+st.title("Calculadora de Prescrição — LC‑RJ 63/1990 (art. 5º‑A, incluído pela LC‑RJ 220/2024)")
 st.caption("Ferramenta de apoio. Ajuste as premissas ao caso concreto e registre a motivação no parecer.")
 
 # =============================
@@ -123,10 +122,32 @@ with colNI:
     no_interruptions = st.checkbox(
         "Não houve marco interruptivo",
         value=False,
-        help="Marque se não houve citação/notificação, ato inequívoco de apuração, decisão condenatória recorrível ou tentativa conciliatória."
+        help=(
+        "Marque se não houve: citação/notificação; comunicação qualificada; ato inequívoco de apuração (instauração de auditoria/TCE);
+"
+        "decisão condenatória recorrível; tentativa conciliatória.
+
+"
+        "Nota: Regra atual — comunicação QUALIFICADA interrompe (efeito subjetivo).
+"
+        "Proposta no Proc. 227.877-1/14 (vista): comunicações (mesmo qualificadas) NÃO interrompem; apenas instauração de auditoria/TCE."
+    )
     )
 
-status_ph = st.empty()
+# Callbacks para evitar sleeps/reruns manuais
+def _add_marco():
+    st.session_state.marco_count += 1
+    st.session_state.marco_dates.append(None)
+
+def _rem_marco():
+    if st.session_state.marco_count > 1:
+        st.session_state.marco_count -= 1
+        st.session_state.marco_dates = st.session_state.marco_dates[: st.session_state.marco_count]
+
+def _clr_marcos():
+    st.session_state.marco_count = 1
+    st.session_state.marco_dates = [None]
+
 interrupcoes = []
 
 if not no_interruptions:
@@ -137,34 +158,26 @@ if not no_interruptions:
             f"Data do marco #{i+1}",
             value=default_val,
             key=f"marco_{i}",
-            help="Citação/notificação; ato inequívoco de apuração; decisão condenatória recorrível; tentativa conciliatória.",
+            help=(
+            "Marcos interruptivos (§3º): citação/notificação; comunicação qualificada (dá ciência específica e abre defesa/esclarecimentos, efeito subjetivo);
+"
+            "ato inequívoco de apuração (instauração de auditoria/TCE); decisão condenatória recorrível; tentativa conciliatória.
+
+"
+            "Nota: Regra atual — comunicação QUALIFICADA interrompe.
+"
+            "Proposta 227.877-1/14 (vista): comunicações (mesmo qualificadas) NÃO interrompem; apenas instauração de auditoria/TCE.
+"
+            "Retroação: chamamento válido retroage à data da decisão que o determinou."
+        ),
         )
         st.session_state.marco_dates[i] = picked
 
     with colBtns:
         colAdd, colRem, colClr = st.columns([1, 1, 1])
-        if colAdd.button("➕ Adicionar data", use_container_width=True):
-            status_ph.info("Adicionando campo de data…")
-            st.session_state.marco_count += 1
-            st.session_state.marco_dates.append(None)
-            time.sleep(0.2)
-            status_ph.empty()
-            st.rerun()
-        if colRem.button("➖ Remover última", disabled=st.session_state.marco_count <= 1, use_container_width=True):
-            status_ph.info("Removendo…")
-            if st.session_state.marco_count > 1:
-                st.session_state.marco_count -= 1
-                st.session_state.marco_dates = st.session_state.marco_dates[: st.session_state.marco_count]
-            time.sleep(0.2)
-            status_ph.empty()
-            st.rerun()
-        if colClr.button("🗑️ Limpar todas", use_container_width=True):
-            status_ph.info("Limpando…")
-            st.session_state.marco_count = 1
-            st.session_state.marco_dates = [None]
-            time.sleep(0.2)
-            status_ph.empty()
-            st.rerun()
+        colAdd.button("➕ Adicionar data", use_container_width=True, on_click=_add_marco)
+        colRem.button("➖ Remover última", disabled=st.session_state.marco_count <= 1, use_container_width=True, on_click=_rem_marco)
+        colClr.button("🗑️ Limpar todas", use_container_width=True, on_click=_clr_marcos)
 
     # Coleta as datas válidas
     interrupcoes = [d for d in st.session_state.marco_dates if isinstance(d, date)]
