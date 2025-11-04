@@ -85,7 +85,7 @@ def build_roteiro_docx_bytes() -> bytes:
         ("3. O app sugere o enquadramento: novo regime / transição / prescrição antes da lei / fora do alcance. Ajuste se necessário.", False),
         ("4. Se habilitar intercorrente, informe último ato e termo final (ou use hoje).", False),
         ("5. Verifique os cartões por gestor e exporte o Excel (Resumo + abas auxiliares).", False),
-        ("6) ÍNDICE DE VÍDEOS (sem legenda)", True),
+        ("6) ÍNDICE DE VÍDEOS", True),
 
         ("01_Novo_Regime_FatoRecente.mp4", True),
         ("Objetivo: Demonstrar fato ≥ 18/07/2021 com contagem quinquenal a partir do fato/cessação.", False),
