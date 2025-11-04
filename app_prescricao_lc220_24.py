@@ -109,24 +109,7 @@ def build_roteiro_docx_bytes() -> bytes:
         ("• Individualizar chamamentos (destinatário, peça, data).", False),
         ("• Qualificar corretamente o tipo de marco (evitar ‘mero protocolo’).", False),
         ("• Motivar o termo e o enquadramento no parecer; coerência com a linha do tempo.", False),
-        ("8) Organização da pasta de acesso", True),
-        ("\\\\Compartilhado\\SGE\\Prescricao_Art5A\\\n"
-         "  ├─ 00_Roteiro_Oficial\\\n"
-         "  │   └─ Roteiro_Oficial_Prescricao_MultiGestores.docx\n"
-         "  ├─ 10_App_Basico\\\n"
-         "  │   ├─ 01_Fato_PosCorte_NovoRegime.mp4\n"
-         "  │   └─ 02_Fatos_PreCorte_Ciencia_AposLei.mp4\n"
-         "  ├─ 20_Marcos\\\n"
-         "  │   ├─ 03_Marcos_Gerais_Efeito.mp4\n"
-         "  │   └─ 04_Chamamento_Subjetivo_PorGestor.mp4\n"
-         "  ├─ 30_Intercorrente_e_Penal\\\n"
-         "  │   ├─ 05_Intercorrente.mp4\n"
-         "  │   └─ 06_Prazo_Penal_Prev.mp4\n"
-         "  ├─ 40_Exportacao\\\n"
-         "  │   └─ 07_Excel_Explicado.mp4\n"
-         "  └─ Materiais_Apoio\\\n"
-         "      ├─ modelos_oficios.pdf\n"
-         "      └─ jurisprudencia_resumo.pdf", False),
+        
     ]
     document_xml = _build_document_xml(sections)
     content_types_xml = (
