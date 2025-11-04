@@ -85,7 +85,63 @@ def build_roteiro_docx_bytes() -> bytes:
         ("3. O app sugere o enquadramento: novo regime / transição / prescrição antes da lei / fora do alcance. Ajuste se necessário.", False),
         ("4. Se habilitar intercorrente, informe último ato e termo final (ou use hoje).", False),
         ("5. Verifique os cartões por gestor e exporte o Excel (Resumo + abas auxiliares).", False),
+        ("6) ÍNDICE DE VÍDEOS (sem legenda)", True),
 
+        ("01_Novo_Regime_FatoRecente.mp4", True),
+        ("Objetivo: Demonstrar fato ≥ 18/07/2021 com contagem quinquenal a partir do fato/cessação.", False),
+        ("Inputs-chave: Punitiva; Ato 03/11/2021; Autuação/Ciência 12/12/2024; sem marcos; sem intercorrente.", False),
+        ("Resultado esperado: Enquadramento 'Novo regime (art. 5º-A)'; prazo final 03/11/2026.", False),
+
+        ("02_Transicao_CienciaPosterior.mp4", True),
+        ("Objetivo: Fato anterior a 18/07/2021 com ciência posterior à lei (aplica transição bienal).", False),
+        ("Inputs-chave: Punitiva; Ato 15/06/2016; Ciência 12/12/2024; sem marcos.", False),
+        ("Resultado esperado: 'Transição 2 anos (LC 220/24)'; vence 18/07/2026.", False),
+
+        ("03_Prescricao_AntesDaLei.mp4", True),
+        ("Objetivo: Reconhecimento de prescrição pré-lei pelo quinquênio da ciência.", False),
+        ("Inputs-chave: Ato 10/05/2015; Ciência 10/06/2017; sem marcos até 18/07/2024.", False),
+        ("Resultado esperado: 'Prescrição reconhecida (regime anterior)'.", False),
+
+        ("04_Transicao_MarcoGeral.mp4", True),
+        ("Objetivo: Mostrar reinício do bienal por ato inequívoco de apuração pós-lei.", False),
+        ("Inputs-chave: Ato 20/02/2017; Ciência 01/08/2024; Marco geral 10/09/2025.", False),
+        ("Resultado esperado: Novo vencimento 10/09/2027.", False),
+
+        ("05_Transicao_Chamamento_Subjetivo.mp4", True),
+        ("Objetivo: Efeito subjetivo do chamamento qualificado (multi-gestores).", False),
+        ("Inputs-chave: Fato 2016; Ciência 2024; Gestor A com chamamento 20/06/2026 (decisão em 05/05/2026); Gestor B sem chamamento.", False),
+        ("Resultado esperado: Gestor A vence 05/05/2028 (retroação à decisão); Gestor B vence 18/07/2026.", False),
+
+        ("06_Intercorrente.mp4", True),
+        ("Objetivo: Prescrição intercorrente (> 3 anos) durante a tramitação.", False),
+        ("Inputs-chave: Novo regime; último ato 01/08/2021; ato subsequente 05/09/2024.", False),
+        ("Resultado esperado: 'Prescrição intercorrente'.", False),
+
+        ("07_Continuada_Cessacao.mp4", True),
+        ("Objetivo: Conduta continuada (termo na cessação).", False),
+        ("Inputs-chave: Cessação 31/12/2022; sem marcos; sem intercorrente.", False),
+        ("Resultado esperado: Novo regime; prazo final 31/12/2027.", False),
+
+        ("08_Ressarcitoria_UltimaMedicao.mp4", True),
+        ("Objetivo: Ressarcitória (analogia) com base 'última medição/pagamento'.", False),
+        ("Inputs-chave: Última medição 30/03/2019; ciência 2024; sem marcos.", False),
+        ("Resultado esperado: Transição; vence 18/07/2026 (salvo marcos pós-lei).", False),
+
+        ("09_PrazoPenal.mp4", True),
+        ("Objetivo: Prevalência do prazo penal (§2º).", False),
+        ("Inputs-chave: Ato 10/10/2022; 'Fato também é crime: Sim'; Prazo penal 8 anos.", False),
+        ("Resultado esperado: Base = penal (8 anos); vencimento 10/10/2030.", False),
+
+        ("10_Ciencia_Apos_18072026.mp4", True),
+        ("Objetivo: Ciência apenas após 18/07/2026 em caso de transição (sem marcos).", False),
+        ("Inputs-chave: Fato 2017; Ciência 01/08/2026; sem marcos.", False),
+        ("Resultado esperado: Prescrição consumada em 18/07/2026 (ciência tardia não reabre).", False),
+
+        ("11_Multigestores_ExportacaoExcel.mp4", True),
+        ("Objetivo: Preencher vários gestores, com marcos gerais e chamamentos específicos, e exportar o Excel.", False),
+        ("Inputs-chave: Fato 2016; Marco geral 01/03/2025; Chamamento só do Gestor B 15/05/2025.", False),
+        ("Resultado esperado: Planilha com Resumo e abas auxiliares; prazos distintos por gestor.", False),
+    
         ]
     document_xml = _build_document_xml(sections)
     content_types_xml = (
