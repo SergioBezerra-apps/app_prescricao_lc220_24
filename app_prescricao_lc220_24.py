@@ -86,7 +86,7 @@ def build_roteiro_docx_bytes() -> bytes:
         ("4. Se habilitar intercorrente, informe último ato e termo final (ou use hoje).", False),
         ("5. Verifique os cartões por gestor e exporte o Excel (Resumo + abas auxiliares).", False),
 
-    ]
+        ]
     document_xml = _build_document_xml(sections)
     content_types_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
