@@ -9,7 +9,10 @@ st.markdown("<style>.block-container {max-width:780px; padding-left:12px; paddin
 # Cabeçalho
 # =============================
 st.title("Calculadora de Prescrição — LC-RJ 63/1990 (art. 5º-A)")
-st.caption("Ferramenta de apoio. Ajuste as premissas ao caso concreto e registre a motivação no parecer.")
+st.caption(
+    "Ferramenta de apoio. Ajuste as premissas ao caso concreto, **registre a motivação** no parecer e **anexe documentos** "
+    "que comprovem a ciência (quando diversa da autuação) e os marcos interruptivos."
+)
 
 # =============================
 # 1) Natureza e dados básicos
@@ -20,30 +23,40 @@ with colA:
         "Natureza da pretensão",
         ["Punitiva", "Ressarcitória (analogia)"],
         help=(
-            "O app sugere com base nas datas e nos marcos intertemporal e interruptivos.\n\n"
-            "Para **fatos anteriores a 18/07/2021**, o **termo inicial** será a **ciência pelo TCE-RJ** (em regra, a autuação, "
-            "salvo se informada ciência diversa). Para **fatos a partir de 18/07/2021**, o termo inicial será a **data do fato/cessação**."
+            "Selecione **Punitiva** (ex.: multa) ou **Ressarcitória (analogia)**. A LCE 220/2024 (art. 5º-A) rege a prescrição no TCE-RJ; "
+            "por consolidação plenária, aplica-se também **por analogia** à pretensão ressarcitória. "
+            "O cálculo de prazo e o termo inicial dependem da **chave intertemporal** (itens abaixo)."
         ),
     )
 with colB:
     conduta = st.selectbox(
         "Tipo de conduta",
         ["Instantânea", "Continuada"],
-        help="Instantânea: ato isolado em uma data. Continuada: efeitos que perduram (ex.: execução contratual com pagamentos).",
+        help=(
+            "**Instantânea**: ato único em uma data. **Continuada**: efeitos que perduram (p.ex., execução contratual com pagamentos). "
+            "Para condutas continuadas, use a **data de cessação** como referência material."
+        ),
     )
 with colC:
     data_autuacao = st.date_input(
         "Data de autuação no TCE-RJ",
         value=date.today(),
-        help="Data em que o processo foi autuado/cadastrado no Tribunal.",
+        help=(
+            "Data em que o processo foi **autuado/cadastrado** no TCE-RJ. Em regra, funciona como **ciência** institucional do Tribunal "
+            "quando não houver comprovação de ciência anterior. **Atenção**: para **fatos anteriores a 18/07/2021**, o regime **anterior** "
+            "considera a **ciência** como termo inicial."
+        ),
     )
 
 # Campo explícito para ciência (pode coincidir com a autuação)
 data_ciencia = st.date_input(
     "Data de ciência pelo TCE-RJ (se diversa da autuação)",
     value=data_autuacao,
-    help="Se a ciência ocorreu em data distinta da autuação, ajuste aqui. "
-         "Esta data será o termo inicial quando os fatos forem anteriores a 18/07/2021.",
+    help=(
+        "Informe se houve **ciência anterior/posterior** à autuação (ex.: ofício com AR, e-mail institucional com contraditório aberto, "
+        "decisão determinando chamamento). Para **fatos anteriores a 18/07/2021**, **esta data** será o **termo inicial** no "
+        "**Regime anterior (quinquênio da ciência)**. **Documente** no processo."
+    ),
 )
 
 # Termo inicial do FATO/EVENTO (para intertemporal)
@@ -52,7 +65,12 @@ if natureza == "Punitiva":
     data_ato = st.date_input(
         "Data do ato (ou da cessação, se continuada)",
         value=date.today(),
-        help="Para punitiva: art. 5º-A (LC-RJ 63/1990) adota a data do ato; se a conduta for continuada, considere a cessação.",
+        help=(
+            "Para o **novo regime** (art. 5º-A), o **termo inicial material** é a **data do ato**; se continuada, a **cessação**. "
+            "Essa data também alimenta a **chave intertemporal**:\n"
+            "• se **< 18/07/2021** ⇒ o caso **é pretérito**;\n"
+            "• se **≥ 18/07/2021** ⇒ o caso **é do novo regime**."
+        ),
     )
     termo_inicial_fato = data_ato
     termo_inicial_fato_label = "Data do ato/cessação (punitiva)"
@@ -65,7 +83,10 @@ else:
             "Última medição/pagamento (contratos)",
             "Cessação do dano (se continuada)",
         ],
-        help="A data escolhida servirá como base para a chave intertemporal (pré/pós 18/07/2021).",
+        help=(
+            "Defina a **base motivada**: (i) **evento danoso**; (ii) **última medição/pagamento** (contratos); ou (iii) **cessação do dano** "
+            "(se continuado). Essa escolha abastece a **chave intertemporal** e deve ser **fundamentada** no parecer."
+        ),
     )
     if base_ress == "Evento danoso (data do dano)":
         data_base = st.date_input("Data do evento danoso", value=date.today())
@@ -81,19 +102,24 @@ with colD:
     transitou_pre_lc = st.selectbox(
         "Decisão adm. transitada em julgado antes de 18/07/2024?",
         ["Não", "Sim"],
-        help="Se 'Sim', a LC-RJ 220/2024 não alcança a decisão já transitada.",
+        help="Se **‘Sim’**, a LCE 220/2024 **não alcança** o caso (ato **findo**).",
     )
 with colE:
     aplicar_prazo_penal = st.selectbox(
         "Fato também é crime? (aplicar prazo penal)",
         ["Não", "Sim"],
-        help="Se houver tipificação penal, prevalece o prazo penal.",
+        help="Se o fato também constitui crime, **prevalece o prazo penal** (art. 5º-A, § 2º).",
     )
 with colF:
     prazo_penal_anos = None
     if aplicar_prazo_penal == "Sim":
         prazo_penal_anos = st.number_input(
-            "Prazo penal (anos)", min_value=1, max_value=40, value=8, step=1, help="Informe o prazo prescricional penal aplicável ao tipo."
+            "Prazo penal (anos)",
+            min_value=1,
+            max_value=40,
+            value=8,
+            step=1,
+            help="Informe o **prazo prescricional penal** aplicável ao tipo."
         )
 
 # =============================
@@ -106,10 +132,13 @@ st.subheader("Enquadramento intertemporal")
 # =============================
 st.subheader("Marcos interruptivos (§ 3º)")
 st.caption(
-    "Use o **checkbox** se não houve interrupção. Caso contrário, adicione as **datas** (calendário) e, se precisar, clique em **+ Adicionar data**.\n"
-    "Marcos interruptivos (§3º): citação/notificação; comunicação **qualificada** (efeito subjetivo); "
-    "ato inequívoco de apuração (instauração de auditoria/TCE); decisão condenatória recorrível; tentativa conciliatória.\n"
-    "Retroação: chamamento válido retroage à data da decisão que o determinou."
+    "Marcos que **interrompem** e **reiniciam** a contagem:\n"
+    "• **Chamamento qualificado** (com contraditório; **efeito subjetivo**);\n"
+    "• **Ato inequívoco de apuração** (p.ex., **determinação de auditoria** ou **instauração** de TCE/TOF; **simples protocolo não interrompe**);\n"
+    "• **Decisão condenatória recorrível**;\n"
+    "• **Tentativa conciliatória**;\n"
+    "• **Retroação**: chamamento válido **retroage** à **data da decisão** que o determinou.\n"
+    "Se **não houve** interrupção, marque o checkbox abaixo."
 )
 
 def _init_interruptions_state():
@@ -122,10 +151,7 @@ _init_interruptions_state()
 
 colNI, colBtns = st.columns([1, 1])
 with colNI:
-    no_interruptions = st.checkbox(
-        "Não houve marco interruptivo",
-        value=False,
-    )
+    no_interruptions = st.checkbox("Não houve marco interruptivo", value=False)
 
 def _add_marco():
     st.session_state.marco_count += 1
@@ -141,15 +167,10 @@ def _clr_marcos():
     st.session_state.marco_dates = [None]
 
 interrupcoes = []
-
 if not no_interruptions:
     for i in range(st.session_state.marco_count):
         default_val = st.session_state.marco_dates[i] or date.today()
-        picked = st.date_input(
-            f"Data do marco #{i+1}",
-            value=default_val,
-            key=f"marco_{i}",
-        )
+        picked = st.date_input(f"Data do marco #{i+1}", value=default_val, key=f"marco_{i}")
         st.session_state.marco_dates[i] = picked
 
     with colBtns:
@@ -201,7 +222,7 @@ presc_antes_lei_auto = _is_prescribed_before_law(data_ciencia, interrupcoes)
 # Chave intertemporal: fatos antes/depois de 18/07/2021
 fatos_pre_2021 = (termo_inicial_fato < date(2021, 7, 18))
 
-# Sugestão de enquadramento (compatível com sua regra)
+# Sugestão de enquadramento (compatível com a regra consolidada e com o caso-limite)
 if transitou_pre_lc == "Sim":
     sugerido = "Fora do alcance: decisão anterior a 18/07/2024"
 elif presc_antes_lei_auto:
@@ -228,17 +249,25 @@ enquadramento = st.selectbox(
         "Fora do alcance: decisão anterior a 18/07/2024",
     ].index(sugerido),
     help=(
-        "Regra: se os **fatos forem anteriores a 18/07/2021**, o termo inicial é a **ciência pelo TCE-RJ**; "
-        "se **posteriores**, o termo inicial é a **data do fato/cessação**. "
-        "A opção 'Transição 2 anos' permanece disponível, mas não é sugerida automaticamente."
+        "**Chave intertemporal – regras operativas**\n"
+        "1) **Fatos < 18/07/2021** ⇒ priorize **Regime anterior (quinquênio da ciência)**:\n"
+        "   • **Termo inicial** = **ciência pelo TCE-RJ** (em regra, autuação, salvo prova de ciência diversa).\n"
+        "   • **Prazo** = 5 anos, com marcos.\n"
+        "   • **Se** o quinquênio estivesse **integralmente consumado** **até 18/07/2024**, reconheça ‘**Prescrição consumada antes da lei**’.\n"
+        "   • **Caso-limite importante**: se a **ciência** ocorrer **após 18/07/2024** (ex.: autuação **12/12/2024** para fato de **2016**), "
+        "conte **5 anos a partir da ciência** (**12/12/2024 → 12/12/2029**); **não** aplique o bienal por transição.\n"
+        "2) **Fatos ≥ 18/07/2021** ⇒ **Novo regime (art. 5º-A)**: **termo = fato/cessação**; **prazo = 5 anos**.\n"
+        "3) **Transição 2 anos (18/07/2024 → 18/07/2026)** ⇒ opte **somente** quando a hipótese caiba **expressamente** na moldura de transição e "
+        "**não** haja incidência do quinquênio da ciência conforme (1). Deixe esta opção **manual** (não sugerida automaticamente).\n"
+        "4) **Fora do alcance** ⇒ processos **administrativamente transitados** antes de 18/07/2024."
     ),
 )
 
 # =============================
-# 4) Intercorrente (§1º)
+# 4) Prescrição intercorrente (§1º)
 # =============================
 st.subheader("Prescrição intercorrente (§ 1º)")
-st.caption("Configura-se com **paralisação > 3 anos** sem julgamento ou despacho.")
+st.caption("Há **paralisação > 3 anos** sem julgamento/ despacho? Se **sim**, marque a verificação e informe **data do último ato útil** e **data subsequente** (ou ‘hoje’).")
 check_intercorrente = st.checkbox("Checar intercorrente?", value=False)
 
 data_ultimo_ato = None
@@ -271,7 +300,7 @@ auto_option = None
 option_text = None
 
 if enquadramento == "Fora do alcance: decisão anterior a 18/07/2024":
-    resultado["sit"] = "Fora do alcance da LC-RJ 220/2024"
+    resultado["sit"] = "Fora do alcance da LCE 220/2024"
     resultado["detalhe"] = "Decisão administrativa transitada em julgado anterior a 18/07/2024."
 elif enquadramento == "Prescrição consumada antes da lei":
     cutoff = date(2024, 7, 18)
@@ -423,7 +452,7 @@ _prazo_final = resultado.get('prazo_final')
 _interrupcoes = resultado.get('interrupcoes', [])
 _interrupcoes_str = ", ".join([d.strftime('%d/%m/%Y') for d in _interrupcoes]) if _interrupcoes else '—'
 
-# Informação adicional: exibir ciência que foi considerada (para rastreabilidade)
+# Informação adicional: exibir ciência considerada (para rastreabilidade)
 ciencia_info = data_ciencia.strftime('%d/%m/%Y') if isinstance(data_ciencia, date) else '—'
 
 _html = f"""
@@ -451,10 +480,11 @@ st.markdown(_html, unsafe_allow_html=True)
 
 # ===== Linha do tempo (opcional) =====
 show_timeline = st.checkbox(
-    "Mostrar linha do tempo (regime anterior e regime aplicável)", value=False,
+    "Mostrar linha do tempo (regime anterior e regime aplicável)",
+    value=False,
     help=(
-        "Visualização dos marcos ao longo do tempo. Regime anterior usa a ciência (TCE-RJ); "
-        "regime aplicável usa o termo efetivo (fato/ciência/transição)."
+        "Mostra, em duas faixas: (i) **Regime anterior (ciência)** até 18/07/2024, com marcos e consumação projetada; "
+        "e (ii) o **regime aplicável** escolhido (novo/transição/ciência), com termo efetivo, marcos e **data-alvo**."
     ),
 )
 
