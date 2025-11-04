@@ -1,21 +1,176 @@
 import streamlit as st
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
-import io
-import csv
+from datetime import date as _date_for_prevcheck
+import pandas as pd
+from io import BytesIO
+import re
+import zipfile
 
 st.set_page_config(page_title="Prescrição — LC-RJ 63/1990 (art. 5º-A) — Multi-Gestores", layout="wide")
 st.markdown("<style>.block-container {max-width:980px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)
 
-# =============================
-# Cabeçalho
-# =============================
+# ============================================================
+# Utilitário: gerar DOCX do Roteiro Oficial (sem dependências externas)
+# ============================================================
+def _xml_escape(s: str) -> str:
+    return (s.replace("&", "&amp;")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace('"', "&quot;")
+             .replace("'", "&apos;"))
+
+def _build_document_xml(sections):
+    def para(text, is_heading=False):
+        t = _xml_escape(text)
+        if is_heading:
+            return f"<w:p><w:r><w:rPr><w:b/><w:sz w:val='28'/></w:rPr><w:t xml:space='preserve'>{t}</w:t></w:r></w:p>"
+        else:
+            return f"<w:p><w:r><w:t xml:space='preserve'>{t}</w:t></w:r></w:p>"
+
+    body = []
+    for text, is_heading in sections:
+        body.append(para(text, is_heading))
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" '
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+        'xmlns:o="urn:schemas-microsoft-com:office:office" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+        'xmlns:v="urn:schemas-microsoft-com:vml" '
+        'xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:w10="urn:schemas-microsoft-com:office:word" '
+        'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
+        'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" '
+        'xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" '
+        'xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" '
+        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">'
+        '<w:body>' + "".join(body) +
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>'
+        '</w:body></w:document>'
+    )
+    return xml
+
+def build_roteiro_docx_bytes() -> bytes:
+    sections = [
+        ("ROTEIRO OFICIAL — Calculadora de Prescrição (LC-RJ 63/1990, art. 5º-A) — Modo Multi-Gestores", True),
+        ("1) Finalidade", True),
+        ("Padronizar a aplicação do art. 5º-A (LCE 63/1990) com a chave intertemporal consolidada pelo Plenário, "
+         "permitindo cálculo individualizado por gestor, com separação entre marcos interruptivos gerais (objetivos) "
+         "e marcos subjetivos (chamamentos qualificados, com efeito subjetivo e retroação).", False),
+        ("2) Matriz de decisão (enxuta)", True),
+        ("• Ato já transitado (administrativamente) antes de 18/07/2024 → fora do alcance da LCE 220/2024.", False),
+        ("• Fatos ≥ 18/07/2021 → Novo regime (termo no fato/cessação; prazo quinquenal).", False),
+        ("• Fatos < 18/07/2021 → olhar a ciência do TCE-RJ:", False),
+        ("   – Ciência > 18/07/2024 → Regime anterior (quinquênio da ciência), contado da ciência (sem transição).", False),
+        ("   – Ciência ≤ 18/07/2024 → testar se o quinquênio da ciência (com interrupções até 18/07/2024) já consumou:", False),
+        ("      ▸ Consumou até 18/07/2024 → prescrição reconhecida pelo regime anterior (sem transição).", False),
+        ("      ▸ Não consumou até 18/07/2024 → Transição bienal: 18/07/2024 → 18/07/2026.", False),
+        ("3) Conceitos operativos", True),
+        ("3.1 Chave intertemporal", True),
+        ("• Fatos < 18/07/2021 → Regime anterior (quinquênio contado da ciência do TCE-RJ; em regra, autuação).", False),
+        ("• Fatos ≥ 18/07/2021 → Novo regime (termo no fato/cessação; quinquênio).", False),
+        ("• Transição (bienal: 18/07/2024 → 18/07/2026): apenas quando fatos são anteriores a 18/07/2021, "
+         "há ciência do TCE-RJ até 18/07/2024 e o quinquênio da ciência ainda não havia se consumado até essa data.", False),
+        ("3.2 Marcos interruptivos", True),
+        ("• Gerais (objetivos, valem para todos): ato inequívoco de apuração, decisão condenatória recorrível, tentativa de conciliação. "
+         "Simples protocolo não interrompe.", False),
+        ("• Subjetivos (por gestor): chamamento qualificado (efeito subjetivo; retroação à decisão que determinou o chamamento).", False),
+        ("3.3 Intercorrente e prazo penal", True),
+        ("• Intercorrente: paralisação superior a 3 anos sem julgamento/despacho (art. 5º-A, §1º).", False),
+        ("• Prazo penal: prevalece quando houver tipificação penal aplicável (art. 5º-A, §2º).", False),
+        ("4) Passo a passo no aplicativo", True),
+        ("1. Dados iniciais: natureza, conduta, fato/cessação (ou base motivada – ressarcitória), autuação, ciência (se diversa).", False),
+        ("2. Marcos gerais: incluir datas (ou marcar ausência).", False),
+        ("3. Gestores: um por linha.", False),
+        ("4. Chamamentos por gestor: registrar datas (ou marcar ausência).", False),
+        ("5. Enquadramento global: aceitar sugestão ou ajustar (transição apenas se cabível).", False),
+        ("6. Intercorrente: habilitar e informar datas, se for o caso.", False),
+        ("7. Resultados: verificar cartões por gestor (situação, termo, data-alvo, interrupções).", False),
+        ("8. Exportação: baixar Excel (Resumo, Marcos, Parâmetros do caso, Dicionário e uma aba por gestor).", False),
+        ("5) Casos de transição — definição e balizas", True),
+        ("Aplicar a transição (bienal) apenas quando: (i) fatos anteriores a 18/07/2021; (ii) ciência do TCE-RJ até 18/07/2024; "
+         "(iii) o quinquênio da ciência não havia se consumado até 18/07/2024; (iv) não há decisão administrativa transitada antes de 18/07/2024.", False),
+        ("• Termo da transição: 18/07/2024. Prazo: 2 anos (18/07/2026), sujeito a interrupções válidas ocorridas após 18/07/2024.", False),
+        ("6) Simulações de vídeo (sem áudio)", True),
+        ("• Vídeo 01 — Fato pós-corte (novo regime): Punitiva/Instantânea; fato 03/11/2021; autuação 01/02/2025; sem marcos.", False),
+        ("• Vídeo 02 — Fatos pretéritos + ciência após a lei: Cessação 10/06/2016; ciência/autuação 12/12/2024; sem marcos → quinquênio da ciência (12/12/2029).", False),
+        ("• Vídeo 03 — Marcos gerais: Fato 2016; ciência 2019; marcos gerais 15/03/2021 e 20/01/2023 (reinícios até 18/07/2024).", False),
+        ("• Vídeo 04 — Chamamento subjetivo: Gestores A e B; apenas A chamado em 10/12/2021 (efeito apenas para A).", False),
+        ("• Vídeo 05 — Intercorrente: último ato 15/05/2020; subsequente/hoje 20/06/2024 (>3 anos).", False),
+        ("• Vídeo 06 — Prazo penal: crime = Sim; prazo penal = 12 anos (prevalece).", False),
+        ("• Vídeo 07 — Exportação Excel: explorar abas Resumo, Marcos_Gerais, Marcos_Subjetivos, Parametros_do_Caso, Dicionario e ‘G – <Gestor>’.", False),
+        ("7) Boas práticas de instrução", True),
+        ("• Comprovar ciência (se diversa da autuação).", False),
+        ("• Individualizar chamamentos (destinatário, peça, data).", False),
+        ("• Qualificar corretamente o tipo de marco (evitar ‘mero protocolo’).", False),
+        ("• Motivar o termo e o enquadramento no parecer; coerência com a linha do tempo.", False),
+        ("8) Organização da pasta de acesso", True),
+        ("\\\\Compartilhado\\SGE\\Prescricao_Art5A\\\n"
+         "  ├─ 00_Roteiro_Oficial\\\n"
+         "  │   └─ Roteiro_Oficial_Prescricao_MultiGestores.docx\n"
+         "  ├─ 10_App_Basico\\\n"
+         "  │   ├─ 01_Fato_PosCorte_NovoRegime.mp4\n"
+         "  │   └─ 02_Fatos_PreCorte_Ciencia_AposLei.mp4\n"
+         "  ├─ 20_Marcos\\\n"
+         "  │   ├─ 03_Marcos_Gerais_Efeito.mp4\n"
+         "  │   └─ 04_Chamamento_Subjetivo_PorGestor.mp4\n"
+         "  ├─ 30_Intercorrente_e_Penal\\\n"
+         "  │   ├─ 05_Intercorrente.mp4\n"
+         "  │   └─ 06_Prazo_Penal_Prev.mp4\n"
+         "  ├─ 40_Exportacao\\\n"
+         "  │   └─ 07_Excel_Explicado.mp4\n"
+         "  └─ Materiais_Apoio\\\n"
+         "      ├─ modelos_oficios.pdf\n"
+         "      └─ jurisprudencia_resumo.pdf", False),
+    ]
+    document_xml = _build_document_xml(sections)
+    content_types_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        '</Types>'
+    )
+    rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+        '</Relationships>'
+    )
+    word_rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
+    )
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('[Content_Types].xml', content_types_xml)
+        z.writestr('_rels/.rels', rels_xml)
+        z.writestr('word/document.xml', document_xml)
+        z.writestr('word/_rels/document.xml.rels', word_rels_xml)
+    return buf.getvalue()
+
+# ============================================================
+# Cabeçalho + botão de download do Roteiro (DOCX)
+# ============================================================
 st.title("Calculadora de Prescrição — LC-RJ 63/1990 (art. 5º-A)")
-st.caption(
-    "Ferramenta de apoio. Ajuste as premissas ao caso concreto, **registre a motivação** no parecer e **anexe documentos** "
-    "que comprovem a ciência (quando diversa da autuação) e os marcos interruptivos. "
-    "Agora com suporte a **múltiplos gestores** (efeito subjetivo do chamamento qualificado)."
-)
+st.caption("Ferramenta de apoio. Ajuste as premissas ao caso concreto, registre a motivação e anexe documentos de prova. Versão multi-gestores com Excel e Roteiro (DOCX).")
+
+with st.expander("📘 Roteiro Oficial — ver/baixar", expanded=False):
+    st.markdown("O Roteiro Oficial consolida as regras, a chave intertemporal e exemplos de simulações para treinamento.")
+    roteiro_bytes = build_roteiro_docx_bytes()
+    st.download_button(
+        "⬇️ Baixar Roteiro Oficial (DOCX)",
+        data=roteiro_bytes,
+        file_name="Roteiro_Oficial_Calculadora_Prescricao_MultiGestores.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        use_container_width=True
+    )
 
 # =============================
 # 1) Natureza e dados básicos
@@ -25,71 +180,45 @@ with colA:
     natureza = st.selectbox(
         "Natureza da pretensão",
         ["Punitiva", "Ressarcitória (analogia)"],
-        help=(
-            "Selecione **Punitiva** (ex.: multa) ou **Ressarcitória (analogia)**. A LCE 220/2024 (art. 5º-A) rege a prescrição no TCE-RJ; "
-            "por consolidação plenária, aplica-se também **por analogia** à pretensão ressarcitória. "
-            "O cálculo de prazo e o termo inicial dependem da **chave intertemporal** (itens abaixo)."
-        ),
+        help=("Selecione Punitiva (ex.: multa) ou Ressarcitória (analogia). "
+              "A LCE 220/2024 (art. 5º-A) rege a prescrição no TCE-RJ, aplicando-se por consolidação plenária também por analogia à ressarcitória."),
     )
 with colB:
     conduta = st.selectbox(
         "Tipo de conduta",
         ["Instantânea", "Continuada"],
-        help=(
-            "**Instantânea**: ato único em uma data. **Continuada**: efeitos que perduram (p.ex., execução contratual com pagamentos). "
-            "Para condutas continuadas, use a **data de cessação** como referência material."
-        ),
+        help="Instantânea: ato único. Continuada: efeitos que perduram (use a data de cessação).",
     )
 with colC:
     data_autuacao = st.date_input(
         "Data de autuação no TCE-RJ",
         value=date.today(),
-        help=(
-            "Data em que o processo foi **autuado/cadastrado** no TCE-RJ. Em regra, funciona como **ciência** institucional do Tribunal "
-            "quando não houver comprovação de ciência anterior. **Atenção**: para **fatos anteriores a 18/07/2021**, o regime **anterior** "
-            "considera a **ciência** como termo inicial."
-        ),
+        help="Em regra, funciona como ciência institucional quando não houver prova de ciência diversa.",
     )
 
-# Ciência explícita (pode coincidir com a autuação)
 data_ciencia = st.date_input(
     "Data de ciência pelo TCE-RJ (se diversa da autuação)",
     value=data_autuacao,
-    help=(
-        "Informe se houve **ciência anterior/posterior** à autuação (ex.: ofício com AR, e-mail institucional com contraditório aberto, "
-        "decisão determinando chamamento). Para **fatos anteriores a 18/07/2021**, **esta data** será o **termo inicial** no "
-        "**Regime anterior (quinquênio da ciência)**. **Documente** no processo."
-    ),
+    help="Para fatos anteriores a 18/07/2021, a prescrição corre do conhecimento pelo TCE-RJ (em regra, autuação).",
 )
 
-# Termo inicial do FATO/EVENTO (para intertemporal)
+# Termo material (fato/cessação ou base ressarcitória)
 st.subheader("Termo inicial material (fato/evento)")
 if natureza == "Punitiva":
     data_ato = st.date_input(
         "Data do ato (ou da cessação, se continuada)",
         value=date.today(),
-        help=(
-            "Para o **novo regime** (art. 5º-A), o **termo inicial material** é a **data do ato**; se continuada, a **cessação**. "
-            "Essa data também alimenta a **chave intertemporal**:\n"
-            "• se **< 18/07/2021** ⇒ o caso **é pretérito**;\n"
-            "• se **≥ 18/07/2021** ⇒ o caso **é do novo regime**."
-        ),
+        help=("No novo regime (art. 5º-A), o termo é o fato/cessação. "
+              "Também aciona a chave intertemporal: < 18/07/2021 (regime anterior); ≥ 18/07/2021 (novo)."),
     )
     termo_inicial_fato = data_ato
     termo_inicial_fato_label = "Data do ato/cessação (punitiva)"
 else:
-    st.markdown("Defina e motive o termo inicial **material** (ressarcitória por analogia).")
+    st.markdown("**Ressarcitória (analogia)** — motive a base do termo inicial.")
     base_ress = st.radio(
-        "Como fixar o termo inicial (ressarcitória)?",
-        [
-            "Evento danoso (data do dano)",
-            "Última medição/pagamento (contratos)",
-            "Cessação do dano (se continuada)",
-        ],
-        help=(
-            "Defina a **base motivada**: (i) **evento danoso**; (ii) **última medição/pagamento** (contratos); ou (iii) **cessação do dano** "
-            "(se continuado). Essa escolha abastece a **chave intertemporal** e deve ser **fundamentada** no parecer."
-        ),
+        "Base do termo (ressarcitória)",
+        ["Evento danoso (data do dano)", "Última medição/pagamento (contratos)", "Cessação do dano (se continuada)"],
+        help="A base escolhida deve ser fundamentada no parecer.",
     )
     if base_ress == "Evento danoso (data do dano)":
         data_base = st.date_input("Data do evento danoso", value=date.today())
@@ -98,71 +227,40 @@ else:
     else:
         data_base = st.date_input("Data de cessação do dano", value=date.today())
     termo_inicial_fato = data_base
-    termo_inicial_fato_label = f"{base_ress}"
+    termo_inicial_fato_label = base_ress
 
 colD, colE, colF = st.columns(3)
 with colD:
     transitou_pre_lc = st.selectbox(
         "Decisão adm. transitada em julgado antes de 18/07/2024?",
         ["Não", "Sim"],
-        help="Se **‘Sim’**, a LCE 220/2024 **não alcança** o caso (ato **findo**).",
+        help="Se 'Sim', a LCE 220/2024 não alcança (ato findo).",
     )
 with colE:
     aplicar_prazo_penal = st.selectbox(
-        "Fato também é crime? (aplicar prazo penal)",
+        "Fato também é crime? (aplica prazo penal)",
         ["Não", "Sim"],
-        help="Se o fato também constitui crime, **prevalece o prazo penal** (art. 5º-A, § 2º).",
+        help="Se houver tipificação penal aplicável, prevalece o prazo penal (art. 5º-A, § 2º).",
     )
 with colF:
     prazo_penal_anos = None
     if aplicar_prazo_penal == "Sim":
-        prazo_penal_anos = st.number_input(
-            "Prazo penal (anos)",
-            min_value=1,
-            max_value=40,
-            value=8,
-            step=1,
-            help="Informe o **prazo prescricional penal** aplicável ao tipo."
-        )
+        prazo_penal_anos = st.number_input("Prazo penal (anos)", min_value=1, max_value=40, value=8, step=1)
 
 # =============================
-# 2) Enquadramento intertemporal
+# 2) Enquadramento intertemporal — teste automático
 # =============================
-st.subheader("Enquadramento intertemporal")
-
-from datetime import date as _date_for_prevcheck
-
-def _is_prescribed_before_law(ciencia: _date_for_prevcheck, interrupcoes: list[_date_for_prevcheck]) -> bool:
-    """
-    Verifica prescrição consumada até 18/07/2024 segundo o regime anterior (quinquênio),
-    usando a data de ciência (informada ou autuação) e marcos interruptivos até o cutoff.
-    """
+def _prelaw_consumou_ate_cutoff(ciencia: _date_for_prevcheck, marcos: list[_date_for_prevcheck]) -> bool:
     cutoff = _date_for_prevcheck(2024, 7, 18)
     if not isinstance(ciencia, _date_for_prevcheck):
         return False
-    ints_prev = sorted([d for d in interrupcoes if isinstance(d, _date_for_prevcheck) and ciencia <= d <= cutoff])
+    ints_prev = sorted([d for d in marcos if isinstance(d, _date_for_prevcheck) and ciencia <= d <= cutoff])
     start = ciencia
     for d in ints_prev:
         if d >= start:
             start = d
     return start + relativedelta(years=5) <= cutoff
 
-def _prelaw_prescription_date(ciencia: _date_for_prevcheck, interrupcoes: list[_date_for_prevcheck]) -> _date_for_prevcheck | None:
-    """
-    Calcula a data de consumação da prescrição no regime anterior (quinquênio),
-    considerando ciência e interrupções até 18/07/2024.
-    """
-    cutoff = _date_for_prevcheck(2024, 7, 18)
-    if not isinstance(ciencia, _date_for_prevcheck):
-        return None
-    ints_prev = sorted([d for d in interrupcoes if isinstance(d, _date_for_prevcheck) and ciencia <= d <= cutoff])
-    start = ciencia
-    for d in ints_prev:
-        if d >= start:
-            start = d
-    return start + relativedelta(years=5)
-
-# Chave intertemporal: fatos antes/depois de 18/07/2021
 fatos_pre_2021 = (termo_inicial_fato < date(2021, 7, 18))
 
 # =============================
@@ -170,12 +268,12 @@ fatos_pre_2021 = (termo_inicial_fato < date(2021, 7, 18))
 # =============================
 st.subheader("Marcos interruptivos")
 st.caption(
-    "Marcos **gerais** (objetivos, valem para todos): ex., **determinação de auditoria** / **instauração** (ato inequívoco de apuração), "
-    "**decisão condenatória recorrível**, **tentativa conciliatória**. **Simples protocolo não interrompe**.\n"
-    "Marcos **subjetivos** (por gestor): **chamamento qualificado** (com contraditório; efeito subjetivo; retroage à decisão que determinou)."
+    "Marcos gerais (objetivos, valem para todos): p.ex., determinação de auditoria/instauração de TCE/TOF, decisão condenatória recorrível, tentativa de conciliação. "
+    "Simples protocolo não interrompe.\n"
+    "Marcos subjetivos (por gestor): chamamento qualificado (efeito subjetivo; retroação à decisão que determinou o chamamento)."
 )
 
-# --- Marcos gerais (valem para todos) ---
+# Marcos gerais
 st.markdown("#### Marcos gerais (valem para todos)")
 def _init_global_state():
     if "g_marco_count" not in st.session_state:
@@ -184,13 +282,8 @@ def _init_global_state():
         st.session_state.g_marco_dates = [None]
 _init_global_state()
 
-colG1, colG2 = st.columns([1, 1])
-with colG1:
-    no_global_inter = st.checkbox("Não houve marco geral", value=False)
-with colG2:
-    pass
-
-def _g_add(): 
+no_global_inter = st.checkbox("Não houve marco geral", value=False)
+def _g_add():
     st.session_state.g_marco_count += 1
     st.session_state.g_marco_dates.append(None)
 def _g_rem():
@@ -207,45 +300,44 @@ if not no_global_inter:
         default_val = st.session_state.g_marco_dates[i] or date.today()
         picked = st.date_input(f"Data do marco geral #{i+1}", value=default_val, key=f"g_marco_{i}")
         st.session_state.g_marco_dates[i] = picked
-    gcolA, gcolB, gcolC = st.columns(3)
-    gcolA.button("➕ Adicionar marco geral", use_container_width=True, on_click=_g_add)
-    gcolB.button("➖ Remover último", disabled=st.session_state.g_marco_count <= 1, use_container_width=True, on_click=_g_rem)
-    gcolC.button("🗑️ Limpar todos", use_container_width=True, on_click=_g_clr)
+    colA1, colA2, colA3 = st.columns(3)
+    colA1.button("➕ Adicionar marco geral", use_container_width=True, on_click=_g_add)
+    colA2.button("➖ Remover último", disabled=st.session_state.g_marco_count <= 1, use_container_width=True, on_click=_g_rem)
+    colA3.button("🗑️ Limpar todos", use_container_width=True, on_click=_g_clr)
     global_marcos = [d for d in st.session_state.g_marco_dates if isinstance(d, date)]
 else:
     global_marcos = []
 
 st.markdown("---")
 
-# --- Lista de gestores ---
+# Lista de gestores
 st.markdown("#### Gestores (um por linha)")
 gestores_text = st.text_area(
     "Nomes dos gestores",
     value="Gestor A\nGestor B",
-    help="Indique um gestor por linha. Para cada gestor, você poderá registrar os **chamamentos qualificados** (efeito subjetivo).",
-    height=90
+    height=90,
+    help="Indique um gestor por linha. Para cada gestor, informe os chamamentos qualificados (efeito subjetivo).",
 )
 gestores = [g.strip() for g in gestores_text.splitlines() if g.strip()]
 
-# --- Marcos subjetivos por gestor (chamamentos qualificados) ---
+# Chamamentos qualificados por gestor
 st.markdown("#### Chamamentos qualificados por gestor (efeito subjetivo)")
 if "gestor_marcos" not in st.session_state:
     st.session_state.gestor_marcos = {}  # nome -> [dates]
-
-# garantir chaves
 for g in gestores:
     if g not in st.session_state.gestor_marcos:
         st.session_state.gestor_marcos[g] = []
 
-# UI por gestor
+def _ensure_g_state(g):
+    cnt_key = f"{g}__cnt"
+    if cnt_key not in st.session_state:
+        st.session_state[cnt_key] = 1
+        st.session_state.gestor_marcos[g] = [None]
+    return cnt_key
+
 for g in gestores:
     with st.expander(f"Chamamentos qualificados — {g}", expanded=False):
-        # estado por gestor
-        cnt_key = f"{g}__cnt"
-        if cnt_key not in st.session_state:
-            st.session_state[cnt_key] = 1
-            st.session_state.gestor_marcos[g] = [None]
-        # render
+        cnt_key = _ensure_g_state(g)
         no_subj = st.checkbox(f"{g}: não houve chamamento qualificado", value=False, key=f"{g}__none")
         def _add_g(g=g):
             st.session_state[cnt_key] += 1
@@ -257,7 +349,6 @@ for g in gestores:
         def _clr_g(g=g):
             st.session_state[cnt_key] = 1
             st.session_state.gestor_marcos[g] = [None]
-
         if not no_subj:
             for i in range(st.session_state[cnt_key]):
                 default_val = st.session_state.gestor_marcos[g][i] or date.today()
@@ -272,22 +363,29 @@ for g in gestores:
             st.session_state.gestor_marcos[g] = []
 
 # =============================
-# 4) Definição do enquadramento (global)
+# 4) Enquadramento intertemporal (global — sugestão alinhada)
 # =============================
-# Pré-teste: prescrição consumada antes da lei (com ciência explícita)
-presc_antes_lei_auto = _is_prescribed_before_law(data_ciencia, global_marcos)
+cutoff = date(2024, 7, 18)
 
 if transitou_pre_lc == "Sim":
     sugerido = "Fora do alcance: decisão anterior a 18/07/2024"
-elif presc_antes_lei_auto:
-    sugerido = "Prescrição consumada antes da lei"
-elif fatos_pre_2021:
-    sugerido = "Regime anterior (quinquênio da ciência)"
-else:
+elif not fatos_pre_2021:
+    # Fatos ≥ 18/07/2021 → novo regime
     sugerido = "Novo regime (art. 5º-A)"
+else:
+    # Fatos < 18/07/2021
+    if data_ciencia and data_ciencia > cutoff:
+        # ciência posterior ao cutoff → quinquênio da ciência, sem transição
+        sugerido = "Regime anterior (quinquênio da ciência)"
+    else:
+        # ciência até o cutoff → testar consumação até 18/07/2024
+        if _prelaw_consumou_ate_cutoff(data_ciencia, global_marcos):
+            sugerido = "Prescrição consumada antes da lei"
+        else:
+            sugerido = "Transição 2 anos (LC 220/24)"
 
 enquadramento = st.selectbox(
-    "Selecione o enquadramento (global para o caso; ajuste se necessário)",
+    "Selecione o enquadramento (global; ajuste se necessário)",
     [
         "Novo regime (art. 5º-A)",
         "Regime anterior (quinquênio da ciência)",
@@ -302,23 +400,18 @@ enquadramento = st.selectbox(
         "Prescrição consumada antes da lei",
         "Fora do alcance: decisão anterior a 18/07/2024",
     ].index(sugerido),
-    help=(
-        "**Chave intertemporal – regras operativas**\n"
-        "1) **Fatos < 18/07/2021** ⇒ priorize **Regime anterior (quinquênio da ciência)**:\n"
-        "   • **Termo inicial** = **ciência pelo TCE-RJ** (em regra, autuação, salvo prova de ciência diversa).\n"
-        "   • **Prazo** = 5 anos, com marcos (gerais + chamamentos qualificados).\n"
-        "   • **Caso-limite**: ciência **após** 18/07/2024 (p.ex., 12/12/2024) → **quinquênio da ciência** (12/12/2024 → 12/12/2029).\n"
-        "2) **Fatos ≥ 18/07/2021** ⇒ **Novo regime (art. 5º-A)**: termo = fato/cessação; prazo = 5 anos.\n"
-        "3) **Transição 2 anos**: opção **manual** e excepcional, quando estritamente cabível.\n"
-        "4) **Fora do alcance**: processos transitados administrativamente antes de 18/07/2024."
-    ),
+    help=("Chave intertemporal\n"
+          "• Fatos < 18/07/2021 → Regime anterior (quinquênio da ciência).\n"
+          "• Fatos ≥ 18/07/2021 → Novo regime (termo no fato/cessação).\n"
+          "• Transição 2 anos → apenas quando couber (ver Roteiro).\n"
+          "• Fora do alcance → decisão adm. transitada antes de 18/07/2024."),
 )
 
 # =============================
-# 5) Prescrição intercorrente (§1º) — global
+# 5) Prescrição intercorrente (§ 1º)
 # =============================
 st.subheader("Prescrição intercorrente (§ 1º)")
-st.caption("Há **paralisação > 3 anos** sem julgamento/ despacho? Se **sim**, marque a verificação e informe **data do último ato útil** e **data subsequente** (ou ‘hoje’).")
+st.caption("Paralisação > 3 anos sem julgamento/despacho? Caso positivo, informe as datas.")
 check_intercorrente = st.checkbox("Checar intercorrente?", value=False)
 
 data_ultimo_ato = None
@@ -338,12 +431,11 @@ if check_intercorrente:
 # 6) Motor de cálculo
 # =============================
 def compute_deadline(data_inicio: date, interrupcoes: list[date], base_anos: int) -> tuple[date, bool]:
-    """Retorna (data_final, houve_interrupcao_valida). Ignora marcos anteriores ao termo inicial."""
     ints = sorted([d for d in interrupcoes if d and d >= data_inicio])
     start = data_inicio
     for d in ints:
         if d >= start:
-            start = d  # reinicia a contagem a partir do marco
+            start = d
     return start + relativedelta(years=base_anos), (len(ints) > 0)
 
 def calcular_por_gestor(nome_gestor: str,
@@ -357,22 +449,13 @@ def calcular_por_gestor(nome_gestor: str,
                         check_intercorrente: bool,
                         data_ultimo_ato: date | None,
                         idata_subseq: date | None) -> dict:
-    """
-    Retorna um dict com o resultado individual do gestor (situação, base, termo, prazo, marcos usados, etc.)
-    """
     resultado = {}
-    option_text = None
-
-    # Conjunto de marcos aplicáveis ao gestor = globais + subjetivos (chamamentos do gestor)
     interrupcoes = sorted([d for d in (global_marcos + subj_marcos) if isinstance(d, date)])
 
-    # Enquadramento especial "Prescrição consumada antes da lei"
     if enquadramento == "Prescrição consumada antes da lei":
         cutoff = date(2024, 7, 18)
         ciencia = data_ciencia if isinstance(data_ciencia, date) else None
-        # Só marcos até o cutoff importam no pré-lei
         ints_prev = [d for d in interrupcoes if d <= cutoff]
-        # data de consumação (pré-lei)
         def _prelaw(ciencia, ints):
             if not ciencia:
                 return None
@@ -384,24 +467,19 @@ def calcular_por_gestor(nome_gestor: str,
             return start + relativedelta(years=5)
         data_prelaw = _prelaw(ciencia, ints_prev)
         resultado["sit"] = "Prescrição reconhecida (regime anterior)"
-        if isinstance(data_prelaw, date):
-            resultado["detalhe"] = f"Consumação em {data_prelaw.strftime('%d/%m/%Y')} (antes de 18/07/2024)."
-            option_text = (
-                f"[{nome_gestor}] Consumação em {data_prelaw.strftime('%d/%m/%Y')}, antes de 18/07/2024 — "
-                "reconhecimento por segurança jurídica e irretroatividade."
-            )
-        else:
-            resultado["detalhe"] = "Consumação integral antes de 18/07/2024 (regime anterior)."
-            option_text = f"[{nome_gestor}] Consumação integral antes de 18/07/2024 (regime anterior)."
+        resultado["detalhe"] = (f"Consumação em {data_prelaw.strftime('%d/%m/%Y')} (antes de 18/07/2024)."
+                                if isinstance(data_prelaw, date) else
+                                "Consumação integral antes de 18/07/2024 (regime anterior).")
+        resultado["natureza"] = natureza
+        resultado["conduta"] = conduta
         resultado["termo_inicial"] = ciencia
         resultado["termo_inicial_label"] = "Ciência (TCE-RJ) — regime anterior"
         resultado["base"] = "quinquenal (regime anterior)"
         resultado["prazo_final"] = data_prelaw
         resultado["interrupcoes"] = sorted(ints_prev)
-        resultado["option_text"] = option_text
         return resultado
 
-    # Base (penal prevalece)
+    # Base de prazo
     if aplicar_prazo_penal == "Sim" and prazo_penal_anos:
         base_anos = prazo_penal_anos
         base_label = f"prazo penal ({prazo_penal_anos} anos)"
@@ -416,20 +494,18 @@ def calcular_por_gestor(nome_gestor: str,
             base_anos = 2
             base_label = "bienal (transição)"
 
-    # Termo inicial efetivo
     if enquadramento == "Novo regime (art. 5º-A)":
         termo_inicial_efetivo = termo_inicial_fato
-        termo_inicial_label_calc = "Termo inicial informado (fato/cessação)"
+        termo_inicial_label = "Termo inicial (fato/cessação)"
     elif enquadramento == "Regime anterior (quinquênio da ciência)":
         termo_inicial_efetivo = data_ciencia
-        termo_inicial_label_calc = "Ciência (TCE-RJ)"
-    else:  # Transição
+        termo_inicial_label = "Ciência (TCE-RJ)"
+    else:
         termo_inicial_efetivo = date(2024, 7, 18)
-        termo_inicial_label_calc = "Transição (18/07/2024)"
+        termo_inicial_label = "Transição (18/07/2024)"
 
     prazo_final, has_valid_interruptions = compute_deadline(termo_inicial_efetivo, interrupcoes, base_anos)
 
-    # Intercorrente (global, mas relatada no cartão individual para transparência)
     intercorrente = False
     periodo_intercorrente = None
     if check_intercorrente and data_ultimo_ato and idata_subseq:
@@ -440,67 +516,53 @@ def calcular_por_gestor(nome_gestor: str,
 
     hoje = date.today()
     interrupcoes_consideradas = sorted([d for d in interrupcoes if d and d >= termo_inicial_efetivo])
-    interrupcoes_str = ", ".join([d.strftime("%d/%m/%Y") for d in interrupcoes_consideradas])
 
     if intercorrente:
         resultado["sit"] = "Prescrição intercorrente"
         resultado["detalhe"] = f"Paralisação superior a 3 anos ({periodo_intercorrente} dias)."
-        option_text = (
-            f"[{nome_gestor}] Verificada paralisação > 3 anos; reconhecer prescrição intercorrente, com arquivamento, "
-            "sem prejuízo de apuração funcional."
-        )
     else:
         if hoje >= prazo_final:
             resultado["sit"] = "Prescrição consumada"
             resultado["detalhe"] = f"Esgotado o prazo {base_label}: {prazo_final.strftime('%d/%m/%Y')}."
-            base_txt = "novo regime" if enquadramento == "Novo regime (art. 5º-A)" else (
-                "regime anterior (ciência)" if enquadramento == "Regime anterior (quinquênio da ciência)" else "transição bienal"
-            )
-            option_text = (
-                f"[{nome_gestor}] Enquadrado no {base_txt}, escoado o prazo {base_label} contado de "
-                f"{termo_inicial_efetivo.strftime('%d/%m/%Y')}, "
-                "sem marcos interruptivos válidos, impõe-se o reconhecimento da prescrição."
-            )
         else:
             resultado["sit"] = "Não prescrito"
             resultado["detalhe"] = f"Data-alvo projetada ({base_label}): {prazo_final.strftime('%d/%m/%Y')}."
-            mi_text = f"dos marcos interruptivos em [{interrupcoes_str}]" if interrupcoes_consideradas else "sem marcos interruptivos identificados"
-            option_text = (
-                f"[{nome_gestor}] À vista do termo inicial em {termo_inicial_efetivo.strftime('%d/%m/%Y')}, "
-                f"{mi_text} e da ausência de paralisação superior a 3 anos, não se verifica prescrição; "
-                "prossiga-se para exame de mérito."
-            )
 
     resultado["natureza"] = natureza
     resultado["conduta"] = conduta
     resultado["termo_inicial"] = termo_inicial_efetivo
-    resultado["termo_inicial_label"] = termo_inicial_label_calc
+    resultado["termo_inicial_label"] = termo_inicial_label
     resultado["prazo_final"] = prazo_final
     resultado["base"] = base_label
     resultado["interrupcoes"] = interrupcoes_consideradas
-    resultado["option_text"] = option_text
     return resultado
 
 # =============================
-# 7) Cálculo por gestor + exportação
+# 7) Resultados por gestor
 # =============================
 st.markdown("### Resultados por gestor")
 
 def _color_for_status(s: str) -> str:
     s = (s or '').lower()
     if 'prescrição consumada' in s or 'intercorrente' in s or 'prescrição reconhecida' in s:
-        return '#D93025'  # vermelho
+        return '#D93025'
     elif 'não prescrito' in s:
-        return '#1E8E3E'  # verde
+        return '#1E8E3E'
     else:
-        return '#1A73E8'  # azul
+        return '#1A73E8'
 
 export_rows = []
-ciencia_info = data_ciencia.strftime('%d/%m/%Y') if isinstance(data_ciencia, date) else '—'
-fato_info = termo_inicial_fato.strftime('%d/%m/%Y') if isinstance(termo_inicial_fato, date) else '—'
+rows_marcos_gerais = [{"marco_geral_data": d.strftime("%Y-%m-%d")} for d in global_marcos]
+
+rows_marcos_subj = []
+ciencia_info_hum = data_ciencia.strftime('%d/%m/%Y') if isinstance(data_ciencia, date) else '—'
+fato_info_hum = termo_inicial_fato.strftime('%d/%m/%Y') if isinstance(termo_inicial_fato, date) else '—'
 
 for g in gestores:
     subj_list = [d for d in st.session_state.gestor_marcos.get(g, []) if isinstance(d, date)]
+    for d in subj_list:
+        rows_marcos_subj.append({"gestor": g, "chamamento_data": d.strftime("%Y-%m-%d")})
+
     res = calcular_por_gestor(
         nome_gestor=g,
         enquadramento=enquadramento,
@@ -521,6 +583,7 @@ for g in gestores:
     _prazo = res.get('prazo_final')
     _ints = res.get('interrupcoes', [])
     _ints_str = ", ".join([d.strftime('%d/%m/%Y') for d in _ints]) if _ints else '—'
+
     _html = f"""
     <div style='border:1px solid {_status_color}; padding:16px; border-radius:12px; margin-bottom:8px;'>
       <div style='font-weight:700; font-size:1.05rem; color:{_status_color};'>[{g}] Situação: {res.get('sit','—')}</div>
@@ -533,114 +596,139 @@ for g in gestores:
         <div><b>Conduta:</b> {res.get('conduta','—')}</div>
         <div><b>Termo inicial (cálculo):</b> {(_termo.strftime('%d/%m/%Y') if isinstance(_termo, date) else '—')} ({res.get('termo_inicial_label','')})</div>
         <div><b>Data atual de prescrição:</b> {(_prazo.strftime('%d/%m/%Y') if isinstance(_prazo, date) else '—')}</div>
-        <div><b>Ciência considerada (TCE-RJ):</b> {ciencia_info}</div>
-        <div><b>Data do fato/cessação:</b> {fato_info}</div>
+        <div><b>Ciência considerada (TCE-RJ):</b> {ciencia_info_hum}</div>
+        <div><b>Data do fato/cessação:</b> {fato_info_hum}</div>
         <div style='grid-column: 1 / -1;'><b>Interrupções (gerais + {g}):</b> {_ints_str}</div>
       </div>
-      {f"<div style='margin-top:12px; padding:12px; background:#fff5f5; border-left:4px solid {_status_color}; border-radius:8px;'><div style='font-weight:600;'>Conclusão sugerida:</div><div>{res.get('option_text','')}</div></div>" if res.get('option_text') else ""}
     </div>
     """
     st.markdown(_html, unsafe_allow_html=True)
 
     export_rows.append({
         "gestor": g,
-        "enquadramento": enquadramento,
         "situacao": res.get('sit','—'),
+        "enquadramento": enquadramento,
         "base": res.get('base','—'),
         "termo_inicial": _termo.strftime('%Y-%m-%d') if isinstance(_termo, date) else '',
         "prazo_final": _prazo.strftime('%Y-%m-%d') if isinstance(_prazo, date) else '',
-        "ciencia": ciencia_info,
-        "fato_cessacao": fato_info,
-        "interrupcoes": _ints_str
+        "ciencia": data_ciencia.strftime('%Y-%m-%d') if isinstance(data_ciencia, date) else '',
+        "fato_cessacao": termo_inicial_fato.strftime('%Y-%m-%d') if isinstance(termo_inicial_fato, date) else '',
+        "interrupcoes": "; ".join([d.strftime('%Y-%m-%d') for d in _ints]) if _ints else ''
     })
 
 # =============================
-# 8) Exportar CSV (resumo por gestor)
+# 8) Exportação Excel (apenas .xlsx) — expandida
 # =============================
-st.markdown("#### Exportação")
-if export_rows:
-    output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["gestor","enquadramento","situacao","base","termo_inicial","prazo_final","ciencia","fato_cessacao","interrupcoes"])
-    writer.writeheader()
-    writer.writerows(export_rows)
-    csv_bytes = output.getvalue().encode("utf-8")
-    st.download_button(
-        "⬇️ Baixar resumo (CSV)",
-        data=csv_bytes,
-        file_name="prescricao_resultados_por_gestor.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
+def sanitize_sheet_name(name: str) -> str:
+    name = re.sub(r'[:\\/?*\[\]]', '_', name).strip()
+    return name[:31] if len(name) > 31 else name
 
-# =============================
-# 9) Linha do tempo (opcional)
-# =============================
-st.markdown("----")
-show_timeline = st.checkbox(
-    "Mostrar linha do tempo (regime anterior e regime aplicável)",
-    value=False,
-    help=(
-        "Mostra, em duas faixas: (i) **Regime anterior (ciência)** até 18/07/2024, com marcos gerais e consumação projetada; "
-        "e (ii) o **regime aplicável** escolhido (novo/transição/ciência), com termo efetivo, marcos (gerais + subjetivos do gestor selecionado) e **data-alvo**."
-    ),
-)
+def make_excel_bytes_expanded(rows_resumo: list[dict],
+                              rows_marcos_gerais: list[dict],
+                              rows_marcos_subj: list[dict],
+                              parametros: dict,
+                              por_gestor_details: dict) -> bytes:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter", datetime_format="yyyy-mm-dd", date_format="yyyy-mm-dd") as writer:
+        wb = writer.book
 
-def _render_timeline_html(title: str, events: list[tuple[str, date, str]]):
-    if not events or len(events) < 2:
-        st.info("Eventos insuficientes para montar a linha do tempo.")
-        return
-    evs = sorted(events, key=lambda e: e[1])
-    d0 = evs[0][1]
-    d1 = evs[-1][1]
-    span = (d1 - d0).days or 1
-    color_map = {
-        'tab:blue': '#1A73E8',
-        'tab:orange': '#FB8C00',
-        'tab:red': '#D93025',
-        'tab:gray': '#9AA0A6',
-        '#D93025': '#D93025',
-        '#1A73E8': '#1A73E8'
-    }
-    html = []
-    html.append("<div style='margin-top:8px;margin-bottom:16px'>")
-    html.append(f"<div style='font-weight:600;margin-bottom:6px'>{title}</div>")
-    html.append("<div style='position:relative;height:76px;border-top:2px solid #ddd;'>")
-    for lbl, d, col in evs:
-        left = int(((d - d0).days / span) * 100)
-        c = color_map.get(col, col)
-        html.append(f"<div style='position:absolute;left:{left}%;top:-6px;transform:translateX(-50%);text-align:center;'>"
-                    "<div style='width:10px;height:10px;border-radius:50%;background:"+c+";margin-bottom:4px;'></div>"
-                    f"<div style='font-size:11px;white-space:nowrap'>{lbl}</div>"
-                    f"<div style='font-size:11px;color:#555'>{d.strftime('%d/%m/%Y')}</div>"
-                    "</div>")
-    html.append("</div></div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
+        df_resumo = pd.DataFrame(rows_resumo) if rows_resumo else pd.DataFrame(columns=[
+            "gestor","situacao","enquadramento","base","termo_inicial","prazo_final","ciencia","fato_cessacao","interrupcoes"
+        ])
+        df_resumo.to_excel(writer, sheet_name="Resumo", index=False)
+        ws = writer.sheets["Resumo"]
+        widths = [26, 20, 28, 22, 15, 15, 15, 15, 40]
+        for i, w in enumerate(widths):
+            ws.set_column(i, i, w)
+        ws.freeze_panes(1, 0)
 
-if show_timeline and gestores:
-    # Seletor para qual gestor exibir marcos subjetivos na linha do tempo 2
-    g_select = st.selectbox("Gestor para linha do tempo (aplica marcos subjetivos deste gestor)", gestores)
-    subj_list = [d for d in st.session_state.gestor_marcos.get(g_select, []) if isinstance(d, date)]
+        red_fmt = wb.add_format({"font_color": "#D93025"})
+        green_fmt = wb.add_format({"font_color": "#1E8E3E"})
+        blue_fmt = wb.add_format({"font_color": "#1A73E8"})
+        last_row = len(df_resumo) + 1
+        ws.conditional_format(f"B2:B{last_row}", {"type": "text", "criteria": "containing", "value": "Prescrição consumada", "format": red_fmt})
+        ws.conditional_format(f"B2:B{last_row}", {"type": "text", "criteria": "containing", "value": "intercorrente", "format": red_fmt})
+        ws.conditional_format(f"B2:B{last_row}", {"type": "text", "criteria": "containing", "value": "Não prescrito", "format": green_fmt})
+        ws.conditional_format(f"B2:B{last_row}", {"type": "no_blanks", "format": blue_fmt})
 
-    # --- Regime anterior (ciência) até 18/07/2024 ---
-    cutoff = date(2024, 7, 18)
-    ciencia = data_ciencia if isinstance(data_ciencia, date) else None
-    if ciencia:
-        ints_prev = sorted([d for d in global_marcos if isinstance(d, date) and ciencia <= d <= cutoff])
-        start = ciencia
-        events_prev = [("Ciência (TCE-RJ)", ciencia, 'tab:blue')]
-        for dmar in ints_prev:
-            if dmar >= start:
-                start = dmar
-                events_prev.append(("Marco geral", dmar, 'tab:orange'))
-        data_prelaw = start + relativedelta(years=5)
-        color_end = 'tab:red' if data_prelaw <= cutoff else 'tab:gray'
-        events_prev.append(("Consumação (reg. anterior)", data_prelaw, color_end))
-        _render_timeline_html("Regime anterior (até 18/07/2024)", events_prev)
+        df_g = pd.DataFrame(rows_marcos_gerais) if rows_marcos_gerais else pd.DataFrame(columns=["marco_geral_data"])
+        df_g.to_excel(writer, sheet_name="Marcos_Gerais", index=False)
+        ws_g = writer.sheets["Marcos_Gerais"]
+        ws_g.set_column("A:A", 18)
+        ws_g.freeze_panes(1, 0)
 
-    # --- Regime aplicável (global + subjetivos do gestor selecionado) ---
-    # Reaproveita o motor de cálculo para pegar prazo e marcos considerados
-    res_demo = calcular_por_gestor(
-        nome_gestor=g_select,
+        df_s = pd.DataFrame(rows_marcos_subj) if rows_marcos_subj else pd.DataFrame(columns=["gestor","chamamento_data"])
+        df_s.to_excel(writer, sheet_name="Marcos_Subjetivos", index=False)
+        ws_s = writer.sheets["Marcos_Subjetivos"]
+        ws_s.set_column("A:A", 26)
+        ws_s.set_column("B:B", 18)
+        ws_s.freeze_panes(1, 0)
+
+        p_rows = [(k, v) for k, v in parametros.items()]
+        df_p = pd.DataFrame(p_rows, columns=["parametro", "valor"])
+        df_p.to_excel(writer, sheet_name="Parametros_do_Caso", index=False)
+        ws_p = writer.sheets["Parametros_do_Caso"]
+        ws_p.set_column("A:A", 36)
+        ws_p.set_column("B:B", 60)
+        ws_p.freeze_panes(1, 0)
+
+        dic_data = [
+            ("gestor", "Nome do gestor (uma linha por gestor)."),
+            ("situacao", "Não prescrito / Prescrição consumada / Prescrição intercorrente / Prescrição reconhecida (regime anterior)."),
+            ("enquadramento", "Novo regime / Regime anterior (ciência) / Transição 2 anos / Prescrição antes da lei / Fora do alcance."),
+            ("base", "quinquenal / quinquenal (ciência) / penal (X anos) / bienal (transição)."),
+            ("termo_inicial", "Data usada no cálculo, conforme enquadramento."),
+            ("prazo_final", "Data-alvo projetada, após interrupções consideradas."),
+            ("ciencia", "Data de ciência considerada (TCE-RJ)."),
+            ("fato_cessacao", "Data do fato/cessação (transparência)."),
+            ("interrupcoes", "Lista das interrupções (marcos gerais + chamamentos do gestor) usadas no cálculo."),
+            ("marco_geral_data", "Data de ato inequívoco de apuração / decisão recorrível / tentativa conciliatória (valem para todos)."),
+            ("chamamento_data", "Data de chamamento qualificado (efeito subjetivo, por gestor)."),
+            ("parametro/valor", "Parâmetros do caso — contexto global da execução."),
+        ]
+        df_dic = pd.DataFrame(dic_data, columns=["coluna", "descrição"])
+        df_dic.to_excel(writer, sheet_name="Dicionario", index=False)
+        ws_d = writer.sheets["Dicionario"]
+        ws_d.set_column("A:A", 30)
+        ws_d.set_column("B:B", 90)
+        ws_d.freeze_panes(1, 0)
+
+        for g, detail in por_gestor_details.items():
+            sheet = sanitize_sheet_name(f"G - {g}")
+            df_det = pd.DataFrame(detail["linhas"])
+            if df_det.empty:
+                df_det = pd.DataFrame(columns=["campo", "valor"])
+            df_det.to_excel(writer, sheet_name=sheet, index=False)
+            ws_x = writer.sheets[sheet]
+            ws_x.set_column("A:A", 34)
+            ws_x.set_column("B:B", 70)
+            ws_x.freeze_panes(1, 0)
+
+    return buf.getvalue()
+
+# Parâmetros globais do caso (para aba "Parametros_do_Caso")
+parametros_do_caso = {
+    "natureza": natureza,
+    "conduta": conduta,
+    "data_autuacao": data_autuacao.strftime("%Y-%m-%d") if isinstance(data_autuacao, date) else "",
+    "data_ciencia": data_ciencia.strftime("%Y-%m-%d") if isinstance(data_ciencia, date) else "",
+    "termo_inicial_material_label": termo_inicial_fato_label,
+    "termo_inicial_material_data": termo_inicial_fato.strftime("%Y-%m-%d") if isinstance(termo_inicial_fato, date) else "",
+    "transitou_pre_lc_220_2024": transitou_pre_lc,
+    "aplicar_prazo_penal": aplicar_prazo_penal,
+    "prazo_penal_anos": prazo_penal_anos if prazo_penal_anos else "",
+    "enquadramento_global": enquadramento,
+    "check_intercorrente": "Sim" if check_intercorrente else "Não",
+    "intercorrente_ultimo_ato": data_ultimo_ato.strftime("%Y-%m-%d") if isinstance(data_ultimo_ato, date) else "",
+    "intercorrente_ato_subseq_ou_hoje": idata_subseq.strftime("%Y-%m-%d") if isinstance(idata_subseq, date) else "",
+}
+
+# Detalhes por gestor (para abas individuais)
+por_gestor_details = {}
+for g in gestores:
+    subj_list = [d for d in st.session_state.gestor_marcos.get(g, []) if isinstance(d, date)]
+    res = calcular_por_gestor(
+        nome_gestor=g,
         enquadramento=enquadramento,
         termo_inicial_fato=termo_inicial_fato,
         data_ciencia=data_ciencia,
@@ -648,26 +736,42 @@ if show_timeline and gestores:
         subj_marcos=subj_list,
         aplicar_prazo_penal=aplicar_prazo_penal,
         prazo_penal_anos=prazo_penal_anos,
-        check_intercorrente=False,
-        data_ultimo_ato=None,
-        idata_subseq=None
+        check_intercorrente=check_intercorrente,
+        data_ultimo_ato=data_ultimo_ato,
+        idata_subseq=idata_subseq
     )
-    _termo = res_demo.get('termo_inicial')
-    _prazo = res_demo.get('prazo_final')
-    _ints = res_demo.get('interrupcoes', [])
-    if isinstance(_termo, date) and isinstance(_prazo, date):
-        events_now = [("Termo inicial (cálculo)", _termo, 'tab:blue')]
-        for dmar in _ints:
-            events_now.append(("Marco (geral/subjetivo)", dmar, 'tab:orange'))
-        color_end_now = '#D93025' if (res_demo.get('sit','').lower().startswith('prescrição')) else '#1A73E8'
-        events_now.append(("Data atual de prescrição", _prazo, color_end_now))
-        _render_timeline_html(f"{enquadramento} — {g_select}", events_now)
+    ints_cons = res.get("interrupcoes", [])
+    linhas = [
+        {"campo": "Gestor", "valor": g},
+        {"campo": "Situação", "valor": res.get("sit","—")},
+        {"campo": "Enquadramento (global)", "valor": enquadramento},
+        {"campo": "Base", "valor": res.get("base","—")},
+        {"campo": "Termo inicial (cálculo)", "valor": res.get("termo_inicial").strftime("%Y-%m-%d") if isinstance(res.get("termo_inicial"), date) else ""},
+        {"campo": "Label do termo", "valor": res.get("termo_inicial_label","")},
+        {"campo": "Data-alvo de prescrição", "valor": res.get("prazo_final").strftime("%Y-%m-%d") if isinstance(res.get("prazo_final"), date) else ""},
+        {"campo": "Ciência considerada (TCE-RJ)", "valor": data_ciencia.strftime("%Y-%m-%d") if isinstance(data_ciencia, date) else ""},
+        {"campo": "Fato/Cessação (transparência)", "valor": termo_inicial_fato.strftime("%Y-%m-%d") if isinstance(termo_inicial_fato, date) else ""},
+        {"campo": "Marcos gerais (datas)", "valor": ", ".join(sorted({d.strftime('%Y-%m-%d') for d in global_marcos})) if global_marcos else ""},
+        {"campo": f"Chamamentos qualificados de {g}", "valor": ", ".join(sorted({d.strftime('%Y-%m-%d') for d in subj_list})) if subj_list else ""},
+        {"campo": "Interrupções consideradas (após o termo)", "valor": ", ".join([d.strftime('%Y-%m-%d') for d in ints_cons]) if ints_cons else ""},
+    ]
+    por_gestor_details[g] = {"linhas": linhas}
 
-st.markdown("---")
-st.caption(
-    "Observações: (i) Interrupções gerais (+ chamamentos do gestor) reiniciam a contagem; "
-    "(ii) intercorrente (§1º): paralisação > 3 anos; "
-    "(iii) fatos < 18/07/2021: termo = ciência (TCE-RJ); "
-    "(iv) fatos ≥ 18/07/2021: termo = fato/cessação; "
-    "(v) na ressarcitória (analogia), registre a motivação do termo."
-)
+st.markdown("#### Exportação (Excel)")
+if export_rows:
+    xlsx_bytes = make_excel_bytes_expanded(
+        rows_resumo=export_rows,
+        rows_marcos_gerais=rows_marcos_gerais,
+        rows_marcos_subj=rows_marcos_subj,
+        parametros=parametros_do_caso,
+        por_gestor_details=por_gestor_details
+    )
+    st.download_button(
+        "⬇️ Baixar resumo (Excel)",
+        data=xlsx_bytes,
+        file_name="prescricao_resultados_multi_gestores.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+else:
+    st.info("Preencha os dados e calcule ao menos um gestor para habilitar a exportação.")
