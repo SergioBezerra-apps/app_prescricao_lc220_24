@@ -8,7 +8,7 @@ from io import BytesIO
 import re
 import zipfile
 
-st.set_page_config(page_title="Prescrição — LC-RJ 63/1990 (art. 5º-A) — Multi-Gestores", layout="wide")
+st.set_page_config(page_title="Prescrição — LC-RJ 63/1990 (art. 5º-A)", layout="wide")
 st.markdown("<style>.block-container {max-width:980px; padding-left:12px; padding-right:12px;}</style>", unsafe_allow_html=True)
 
 # ======================================================================================
@@ -58,7 +58,7 @@ def _build_document_xml(sections):
 
 def build_roteiro_docx_bytes() -> bytes:
     sections = [
-        ("ROTEIRO OFICIAL — Calculadora de Prescrição (LC-RJ 63/1990, art. 5º-A) — Modo Multi-Gestores", True),
+        ("ROTEIRO OFICIAL — Calculadora de Prescrição (LC-RJ 63/1990, art. 5º-A)", True),
         ("1) Finalidade", True),
         ("Padronizar a aplicação do art. 5º-A (LCE 63/1990) com a chave intertemporal consolidada pelo Plenário: "
          "fatos ≥ 18/07/2021 → novo regime (5 anos do fato/cessação); fatos < 18/07/2021 → teste pré-lei e, não consumando até 18/07/2024, transição bienal (18/07/2024 → 18/07/2026).", False),
@@ -174,7 +174,7 @@ def build_roteiro_docx_bytes() -> bytes:
 # Cabeçalho + botão de download do Roteiro (DOCX)
 # ======================================================================================
 st.title("Calculadora de Prescrição — LC-RJ 63/1990 (art. 5º-A)")
-st.caption("Ferramenta de apoio. Ajuste as premissas ao caso concreto. Versão multi-gestores com Excel e Roteiro (DOCX).")
+st.caption("Ferramenta de apoio. Ajuste as premissas ao caso concreto.")
 
 with st.expander("📘 Roteiro Oficial — ver/baixar", expanded=False):
     st.markdown("O Roteiro Oficial consolida as regras, a chave intertemporal e exemplos de uso.")
@@ -182,7 +182,7 @@ with st.expander("📘 Roteiro Oficial — ver/baixar", expanded=False):
     st.download_button(
         "⬇️ Baixar Roteiro Oficial (DOCX)",
         data=roteiro_bytes,
-        file_name="Roteiro_Oficial_Calculadora_Prescricao_MultiGestores.docx",
+        file_name="Roteiro_Oficial_Calculadora_Prescricao.docx",
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         use_container_width=True
     )
@@ -853,7 +853,7 @@ if export_rows:
     st.download_button(
         "⬇️ Baixar resumo (Excel)",
         data=xlsx_bytes,
-        file_name="prescricao_resultados_multi_gestores.xlsx",
+        file_name="prescricao_resultados_gestores.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
