@@ -195,7 +195,104 @@ with st.expander("📘 Roteiro Oficial — ver/baixar", expanded=False):
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         use_container_width=True
     )
+# ==============================
+# Novo: "Regras e fundamentos básicos" (DOCX)
+# ==============================
+def build_regras_fundamentos_docx_bytes() -> bytes:
+    intro = (
+        "Este guia resume a chave intertemporal e os principais fundamentos aplicados pela calculadora de "
+        "prescrição (art. 5º-A da LCE 63/1990, redação da LCE 220/2024), a partir dos paradigmas 224.269-8/23, "
+        "227.877-1/14 e 114.199-4/2024. Para fatos ≥ 18/07/2021, aplica-se o novo regime (termo no fato/cessação; "
+        "quinquênio). Para fatos < 18/07/2021, preserva-se o teste pré-lei (quinquênio pela ciência do TCE) e, não "
+        "consumada até 18/07/2024, incide a regra de transição (biênio a partir de 18/07/2024), com marcos interruptivos "
+        "aplicáveis. Interrupções reiniciam o prazo no mesmo regime (5 anos no novo; 2 anos na transição). O chamamento "
+        "qualificado tem efeito subjetivo. As regras podem ser ajustadas por novos votos; registre a motivação no parecer."
+    )
 
+    bullets = [
+        # Chave intertemporal
+        ("CHAVE INTERTEMPORAL", True),
+        ("• Fatos ≥ 18/07/2021 → Novo regime (art. 5º-A): termo no fato/cessação; prazo 5 anos; "
+         "marcos a partir do fato/cessação; intercorrente em 3 anos. (Base: 224.269-8/23; 227.877-1/14)", False),
+        ("• Fatos < 18/07/2021 → Teste pré-lei (regime anterior): quinquênio contado da ciência pelo TCE "
+         "(em regra, a autuação). Se NÃO consumou até 18/07/2024 → Transição bienal (18/07/2024 → 18/07/2026). "
+         "(Base: 227.877-1/14; 114.199-4/2024)", False),
+
+        # Interrupções
+        ("MARCOS INTERRUPTIVOS", True),
+        ("• Novo regime: comunicação/notificação/citação; ato inequívoco de apuração; decisão recorrível; "
+         "tentativa conciliatória; chamamento qualificado. Interrompem e reiniciam 5 anos.", False),
+        ("• Transição: marcos válidos a partir de 18/07/2024 interrompem e reiniciam 2 anos (não convertem em 5). "
+         "(Base: 227.877-1/14)", False),
+        ("• Chamamento qualificado (efeito subjetivo): interrompe apenas para o gestor chamado e pode retroagir "
+         "à decisão que o determinou. (Base: 227.877-1/14)", False),
+        ("• Simples protocolo/movimento interno sem lastro apuratório: não interrompe. (Base: 227.877-1/14)", False),
+
+        # Termos e intercorrente
+        ("TERMOS E INTERCORRENTE", True),
+        ("• Regime anterior (pré-lei): termo inicial na ciência pelo TCE (em regra, a autuação). (Base: 114.199-4/2024)", False),
+        ("• Intercorrente (novo §1º): 3 anos de paralisação sem despacho/julgamento útil. (Base: 227.877-1/14)", False),
+
+        # Observação final
+        ("OBSERVAÇÃO IMPORTANTE", True),
+        ("As regras acima refletem a consolidação atual. Podem ser ajustadas por novos votos/acórdãos. "
+         "O aplicativo permite ajustar premissas (datas, marcos e enquadramento) e recomenda registrar a motivação "
+         "no parecer de cada caso concreto.", False),
+    ]
+
+    # Usa as utilidades já existentes (_xml_escape / _build_document_xml)
+    sections = [("REGRAS E FUNDAMENTOS BÁSICOS — Calculadora de Prescrição", True),
+                (intro, False)]
+    sections.extend(bullets)
+
+    document_xml = _build_document_xml([(t, is_h) for (t, is_h) in sections])
+
+    # Pacote DOCX mínimo (sem dependências)
+    content_types_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        '</Types>'
+    )
+    rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="word/document.xml"/>'
+        '</Relationships>'
+    )
+    word_rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Relationships xmlns="http://schemas.microsoft.com/office/2006/relationships"/>'
+    )
+
+    from io import BytesIO
+    import zipfile
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('[Content_Types].xml', content_types_xml)
+        z.writestr('_rels/.rels', rels_xml)
+        z.writestr('word/document.xml', document_xml)
+        z.writestr('word/_rels/document.xml.rels', word_rels_xml)
+    return buf.getvalue()
+
+with st.expander("📗 Regras e fundamentos básicos — ver/baixar", expanded=False):
+    st.markdown(
+        "Este guia resume a chave intertemporal e os fundamentos aplicados pela calculadora. "
+        "As regras podem ser ajustadas por novos votos; registre sempre a motivação no parecer."
+    )
+    regras_bytes = build_regras_fundamentos_docx_bytes()
+    st.download_button(
+        "⬇️ Baixar Regras e Fundamentos Básicos (DOCX)",
+        data=regras_bytes,
+        file_name="Regras_e_Fundamentos_Basicos.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        use_container_width=True
+    )
 # --------------------------------------------------------------------------------------
 # 1) Natureza e dados básicos
 # --------------------------------------------------------------------------------------
