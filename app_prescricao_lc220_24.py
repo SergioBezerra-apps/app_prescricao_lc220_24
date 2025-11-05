@@ -41,21 +41,21 @@ def _build_document_xml(sections):
         body.append(para(text, is_heading))
     xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" '
+        '<w:document xmlns:wpc="http://schemas.microsoft.com/office/2010/wordprocessingCanvas" '
         'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
         'xmlns:o="urn:schemas-microsoft-com:office:office" '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
         'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
         'xmlns:v="urn:schemas-microsoft-com:vml" '
-        'xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" '
+        'xmlns:wp14="http://schemas.microsoft.com/office/2010/wordprocessingDrawing" '
         'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
         'xmlns:w10="urn:schemas-microsoft-com:office:word" '
         'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-        'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
-        'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" '
-        'xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" '
-        'xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" '
-        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">'
+        'xmlns:w14="http://schemas.microsoft.com/office/2010/wordml" '
+        'xmlns:wpg="http://schemas.microsoft.com/office/2010/wordprocessingGroup" '
+        'xmlns:wpi="http://schemas.microsoft.com/office/2010/wordprocessingInk" '
+        'xmlns:wne="http://schemas.microsoft.com/office/2006/wordml" '
+        'xmlns:wps="http://schemas.microsoft.com/office/2010/wordprocessingShape" mc:Ignorable="w14 wp14">'
         '<w:body>' + "".join(body) +
         '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>'
@@ -264,49 +264,51 @@ with colF:
 # --------------------------------------------------------------------------------------
 # Autuação & Ciência com sincronismo (sem campo opcional)
 # --------------------------------------------------------------------------------------
+# defaults
 if "sync_ciencia" not in st.session_state:
-    st.session_state.sync_ciencia = True
+    st.session_state["sync_ciencia"] = True
 if "data_autuacao" not in st.session_state:
-    st.session_state.data_autuacao = date.today()
+    st.session_state["data_autuacao"] = date.today()
 if "data_ciencia" not in st.session_state:
-    st.session_state.data_ciencia = st.session_state.data_autuacao
+    st.session_state["data_ciencia"] = st.session_state["data_autuacao"]
 
-def _on_change_autuacao():
+def _on_change_autuacao_or_sync():
+    # Sempre que autuação mudar e sync estiver ativo, replicar em ciência
     if st.session_state.get("sync_ciencia", True):
-        st.session_state.data_ciencia = st.session_state.data_autuacao
+        st.session_state["data_ciencia"] = st.session_state.get("data_autuacao", date.today())
 
 col_aut, col_sync = st.columns([1.2, 0.8])
 with col_aut:
-    st.session_state.data_autuacao = st.date_input(
+    st.date_input(
         "Data de autuação no TCE-RJ",
-        value=st.session_state.data_autuacao,
+        value=st.session_state["data_autuacao"],
         key="data_autuacao",
         help="Por padrão, funciona também como ciência institucional (salvo prova de ciência diversa).",
         min_value=MIN_DATA,
         max_value=MAX_DATA,
-        on_change=_on_change_autuacao,
+        on_change=_on_change_autuacao_or_sync,
     )
 with col_sync:
-    st.session_state.sync_ciencia = st.checkbox(
+    st.checkbox(
         "Ciência = autuação",
-        value=st.session_state.sync_ciencia,
-        help="Mantendo marcado, a ciência acompanha automaticamente a autuação.",
+        value=st.session_state["sync_ciencia"],
         key="sync_ciencia",
-        on_change=_on_change_autuacao,
+        help="Mantendo marcado, a ciência acompanha automaticamente a autuação.",
+        on_change=_on_change_autuacao_or_sync,
     )
 
-st.session_state.data_ciencia = st.date_input(
+st.date_input(
     "Data de ciência pelo TCE-RJ",
-    value=(st.session_state.data_autuacao if st.session_state.sync_ciencia else st.session_state.data_ciencia),
+    value=(st.session_state["data_autuacao"] if st.session_state["sync_ciencia"] else st.session_state["data_ciencia"]),
     key="data_ciencia",
     help="Desmarque 'Ciência = autuação' para editar manualmente.",
     min_value=MIN_DATA,
     max_value=MAX_DATA,
-    disabled=st.session_state.sync_ciencia,
+    disabled=st.session_state["sync_ciencia"],
 )
 
-data_autuacao = st.session_state.data_autuacao
-data_ciencia  = st.session_state.data_ciencia
+data_autuacao = st.session_state["data_autuacao"]
+data_ciencia  = st.session_state["data_ciencia"]
 
 # --------------------------------------------------------------------------------------
 # 2) Funções auxiliares — teste pré-lei e deadline
@@ -347,34 +349,34 @@ st.caption(
 st.markdown("#### Marcos gerais (valem para todos)")
 def _init_global_state():
     if "g_marco_count" not in st.session_state:
-        st.session_state.g_marco_count = 1
+        st.session_state["g_marco_count"] = 1
     if "g_marco_dates" not in st.session_state:
-        st.session_state.g_marco_dates = [None]
+        st.session_state["g_marco_dates"] = [None]
 _init_global_state()
 
 no_global_inter = st.checkbox("Não houve marco geral", value=False)
 def _g_add():
-    st.session_state.g_marco_count += 1
-    st.session_state.g_marco_dates.append(None)
+    st.session_state["g_marco_count"] += 1
+    st.session_state["g_marco_dates"].append(None)
 def _g_rem():
-    if st.session_state.g_marco_count > 1:
-        st.session_state.g_marco_count -= 1
-        st.session_state.g_marco_dates = st.session_state.g_marco_dates[: st.session_state.g_marco_count]
+    if st.session_state["g_marco_count"] > 1:
+        st.session_state["g_marco_count"] -= 1
+        st.session_state["g_marco_dates"] = st.session_state["g_marco_dates"][: st.session_state["g_marco_count"]]
 def _g_clr():
-    st.session_state.g_marco_count = 1
-    st.session_state.g_marco_dates = [None]
+    st.session_state["g_marco_count"] = 1
+    st.session_state["g_marco_dates"] = [None]
 
 global_marcos = []
 if not no_global_inter:
-    for i in range(st.session_state.g_marco_count):
-        default_val = st.session_state.g_marco_dates[i] or date.today()
+    for i in range(st.session_state["g_marco_count"]):
+        default_val = st.session_state["g_marco_dates"][i] or date.today()
         picked = st.date_input(f"Data do marco geral #{i+1}", value=default_val, key=f"g_marco_{i}", min_value=MIN_DATA, max_value=MAX_DATA)
-        st.session_state.g_marco_dates[i] = picked
+        st.session_state["g_marco_dates"][i] = picked
     colA1, colA2, colA3 = st.columns(3)
     colA1.button("➕ Adicionar marco geral", use_container_width=True, on_click=_g_add)
-    colA2.button("➖ Remover último", disabled=st.session_state.g_marco_count <= 1, use_container_width=True, on_click=_g_rem)
+    colA2.button("➖ Remover último", disabled=st.session_state["g_marco_count"] <= 1, use_container_width=True, on_click=_g_rem)
     colA3.button("🗑️ Limpar todos", use_container_width=True, on_click=_g_clr)
-    global_marcos = [d for d in st.session_state.g_marco_dates if isinstance(d, date)]
+    global_marcos = [d for d in st.session_state["g_marco_dates"] if isinstance(d, date)]
 else:
     global_marcos = []
 
@@ -393,16 +395,16 @@ gestores = [g.strip() for g in gestores_text.splitlines() if g.strip()]
 # Chamamentos qualificados por gestor
 st.markdown("#### Chamamentos qualificados por gestor (efeito subjetivo)")
 if "gestor_marcos" not in st.session_state:
-    st.session_state.gestor_marcos = {}  # nome -> [dates]
+    st.session_state["gestor_marcos"] = {}  # nome -> [dates]
 for g in gestores:
-    if g not in st.session_state.gestor_marcos:
-        st.session_state.gestor_marcos[g] = []
+    if g not in st.session_state["gestor_marcos"]:
+        st.session_state["gestor_marcos"][g] = []
 
 def _ensure_g_state(g):
     cnt_key = f"{g}__cnt"
     if cnt_key not in st.session_state:
         st.session_state[cnt_key] = 1
-        st.session_state.gestor_marcos[g] = [None]
+        st.session_state["gestor_marcos"][g] = [None]
     return cnt_key
 
 for g in gestores:
@@ -411,26 +413,26 @@ for g in gestores:
         no_subj = st.checkbox(f"{g}: não houve chamamento qualificado", value=False, key=f"{g}__none")
         def _add_g(g=g):
             st.session_state[cnt_key] += 1
-            st.session_state.gestor_marcos[g].append(None)
+            st.session_state["gestor_marcos"][g].append(None)
         def _rem_g(g=g):
             if st.session_state[cnt_key] > 1:
                 st.session_state[cnt_key] -= 1
-                st.session_state.gestor_marcos[g] = st.session_state.gestor_marcos[g][: st.session_state[cnt_key]]
+                st.session_state["gestor_marcos"][g] = st.session_state["gestor_marcos"][g][: st.session_state[cnt_key]]
         def _clr_g(g=g):
             st.session_state[cnt_key] = 1
-            st.session_state.gestor_marcos[g] = [None]
+            st.session_state["gestor_marcos"][g] = [None]
         if not no_subj:
             for i in range(st.session_state[cnt_key]):
-                default_val = st.session_state.gestor_marcos[g][i] or date.today()
+                default_val = st.session_state["gestor_marcos"][g][i] or date.today()
                 picked = st.date_input(f"{g} — data do chamamento #{i+1}", value=default_val, key=f"{g}__marco_{i}", min_value=MIN_DATA, max_value=MAX_DATA)
-                st.session_state.gestor_marcos[g][i] = picked
+                st.session_state["gestor_marcos"][g][i] = picked
             c1, c2, c3 = st.columns(3)
             c1.button("➕ Adicionar", use_container_width=True, key=f"{g}__add_btn", on_click=_add_g)
             c2.button("➖ Remover última", disabled=st.session_state[cnt_key] <= 1, use_container_width=True, key=f"{g}__rem_btn", on_click=_rem_g)
             c3.button("🗑️ Limpar todas", use_container_width=True, key=f"{g}__clr_btn", on_click=_clr_g)
         else:
             st.session_state[cnt_key] = 1
-            st.session_state.gestor_marcos[g] = []
+            st.session_state["gestor_marcos"][g] = []
 
 # --------------------------------------------------------------------------------------
 # 4) Enquadramento intertemporal (global — SUGESTÃO CORRIGIDA)
@@ -443,11 +445,11 @@ elif not fatos_pre_2021:
     # Fatos ≥ 18/07/2021 → novo regime (5 anos do fato/cessação), independentemente da data de ciência/autuação
     sugerido = "Novo regime (art. 5º-A)"
 else:
-    # Fatos < 18/07/2021 → primeiro TESTE PRÉ-LEI: consumou até 18/07/2024 pelo regime anterior (quinquênio da ciência)?
+    # Fatos < 18/07/2021 → TESTE PRÉ-LEI: consumou até 18/07/2024 pelo quinquênio da ciência?
     if _prelaw_consumou_ate_cutoff(data_ciencia, global_marcos):
         sugerido = "Prescrição consumada antes da lei"
     else:
-        # NÃO consumou → Transição bienal (18/07/2024 → 18/07/2026), mesmo que a ciência/autuação seja posterior.
+        # NÃO consumou → Transição bienal (18/07/2024 → 18/07/2026), mesmo que a ciência seja posterior.
         sugerido = "Transição 2 anos (LC 220/24)"
 
 enquadramento = st.selectbox(
@@ -627,7 +629,7 @@ fato_info_hum = termo_inicial_fato.strftime('%d/%m/%Y') if isinstance(termo_inic
 por_gestor_details = {}
 
 for g in gestores:
-    subj_list = [d for d in st.session_state.gestor_marcos.get(g, []) if isinstance(d, date)]
+    subj_list = [d for d in st.session_state["gestor_marcos"].get(g, []) if isinstance(d, date)]
     for d in subj_list:
         rows_marcos_subj.append({"gestor": g, "chamamento_data": d.strftime("%Y-%m-%d")})
 
@@ -696,7 +698,7 @@ for g in gestores:
         {"campo": "Ciência considerada (TCE-RJ)", "valor": data_ciencia.strftime("%Y-%m-%d") if isinstance(data_ciencia, date) else ""},
         {"campo": "Fato/Cessação (transparência)", "valor": termo_inicial_fato.strftime("%Y-%m-%d") if isinstance(termo_inicial_fato, date) else ""},
         {"campo": "Marcos gerais (datas)", "valor": ", ".join(sorted({d.strftime('%Y-%m-%d') for d in global_marcos})) if global_marcos else ""},
-        {"campo": f"Chamamentos qualificados de {g}", "valor": ", ".join(sorted({d.strftime('%Y-%m-%d') for d in [d for d in st.session_state.gestor_marcos.get(g, []) if isinstance(d, date)]})) if st.session_state.gestor_marcos.get(g) else ""},
+        {"campo": f"Chamamentos qualificados de {g}", "valor": ", ".join(sorted({d.strftime('%Y-%m-%d') for d in [d for d in st.session_state['gestor_marcos'].get(g, []) if isinstance(d, date)]})) if st.session_state['gestor_marcos'].get(g) else ""},
         {"campo": "Interrupções consideradas (após o termo)", "valor": ", ".join([d.strftime('%Y-%m-%d') for d in res.get('interrupcoes', [])]) if res.get('interrupcoes') else ""},
     ]
     por_gestor_details[g] = {"linhas": linhas}
